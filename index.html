@@ -114,6 +114,15 @@ pre{font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-
 input.fill{width:76px;padding:5px 7px;font-size:.8rem}
 .tbl.cat td{font-size:.85rem}
 .tbl.cat td.good{color:var(--lime)}.tbl.cat td.neg{color:var(--red)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;border:1px solid var(--cyan);border-radius:999px;overflow:hidden;box-shadow:0 0 10px rgba(0,240,255,.25)}
+.chip a{color:var(--cyan);text-decoration:none;padding:7px 12px;font-weight:600}
+.chip button{background:transparent;border:none;border-left:1px solid var(--line);color:var(--red);cursor:pointer;padding:7px 10px;font:inherit}
+h3.sub{font-family:'Exo 2',Inter,system-ui,sans-serif;color:var(--pink);font-size:1rem;margin:18px 0 6px;text-shadow:0 0 8px rgba(255,43,214,.5)}
+.links{margin:0;padding-left:18px;color:var(--dim)}
+.links li{margin:8px 0}
+.links a{color:var(--lime);font-weight:600;text-decoration:none;text-shadow:0 0 6px rgba(57,255,20,.45)}
+.links a:hover{text-decoration:underline}
 footer{color:var(--dim);font-size:.8rem;text-align:center;margin-top:28px}
 footer b{color:var(--orange)}
 .ver{color:var(--cyan);white-space:nowrap}
@@ -139,6 +148,7 @@ footer b{color:var(--orange)}
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-tab="shots">SCREENSHOTS</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="live">LIVE KALSHI</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="research">RESEARCH</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="how">HOW IT WORKS</button>
     </div>
   </header>
@@ -170,6 +180,28 @@ footer b{color:var(--orange)}
       <button class="btn cyan" id="liveBtn">FETCH</button>
     </div>
     <p class="note" id="liveNote"></p>
+  </section>
+
+  <section id="tab-research" class="panel hidden">
+    <h2><span class="num">01</span> Research before you pick</h2>
+    <p class="note" style="margin-top:0">Your % should come from evidence, not the Kalshi price. For temperature markets, the National Weather Service forecast is the best free source. Links open in a new tab.</p>
+    <div class="row" style="margin-top:10px">
+      <input id="cityIn" placeholder="City, State (e.g. Las Vegas, NV)" style="flex:1 1 220px" autocomplete="off">
+      <button class="btn cyan" id="cityGo">FORECAST</button>
+      <button class="btn" id="citySave">SAVE CITY</button>
+    </div>
+    <p class="note" style="margin-bottom:6px">Your cities (tap for the weather.gov forecast, × to remove):</p>
+    <div class="chips" id="cityChips"></div>
+    <h3 class="sub">Sources</h3>
+    <ul class="links">
+      <li><a href="https://www.weather.gov/" target="_blank" rel="noopener">National Weather Service</a> · official forecasts for any US city</li>
+      <li><a href="https://www.weather.gov/wrh/climate" target="_blank" rel="noopener">NWS climate data (NOWData)</a> · past daily highs and lows, the kind of record Kalshi temperature markets settle on</li>
+      <li><a href="https://www.localconditions.com/weather-las-vegas-nevada/89137/forecast.php" target="_blank" rel="noopener">LocalConditions: Las Vegas</a> · second opinion on the Las Vegas forecast</li>
+      <li><a href="https://www.fox5vegas.com/weather/" target="_blank" rel="noopener">FOX5 Las Vegas weather</a> · local forecasters' take on big swings</li>
+      <li><a href="https://kalshi.com/" target="_blank" rel="noopener">Kalshi</a> · open the market page to see full rules, the exact day, and both Yes and No prices</li>
+      <li><a href="https://kalshi.com/fee-schedule" target="_blank" rel="noopener">Kalshi fee schedule</a> · check whether a market uses a different fee rate</li>
+    </ul>
+    <p class="note">Tip: read a market's rules on Kalshi first. They name the exact weather station and day it settles on, which can differ from "the city" in general.</p>
   </section>
 
   <section id="tab-how" class="panel hidden">
@@ -220,13 +252,13 @@ footer b{color:var(--orange)}
   </section>
 
   <footer>
-    Free and open source. Runs entirely in your browser. <span class="ver">Version 2026.10.12d</span><br>
+    Free and open source. Runs entirely in your browser. <span class="ver">Version 2026.10.12e</span><br>
     <b>Not financial advice.</b> Prediction markets can lose your whole stake. Only bet what you can afford to lose.
   </footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="katy-math.js?v=2026.10.12d"></script>
-<script src="app.js?v=2026.10.12d"></script>
+<script src="katy-math.js?v=2026.10.12e"></script>
+<script src="app.js?v=2026.10.12e"></script>
 </body>
 </html>

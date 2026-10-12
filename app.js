@@ -21,7 +21,7 @@
   // ---------- tabs ----------
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === t));
-    ['shots', 'live', 'how'].forEach(n => $('#tab-' + n).classList.toggle('hidden', n !== t.dataset.tab));
+    ['shots', 'live', 'research', 'how'].forEach(n => $('#tab-' + n).classList.toggle('hidden', n !== t.dataset.tab));
   }));
 
   // ---------- screenshot upload ----------
@@ -167,6 +167,42 @@
     if (rawTexts.length) { $('#raw').textContent = rawTexts.join('\n\n———\n\n'); $('#rawBox').classList.remove('hidden'); }
     renderShots(); save(); renderTable(); compute();
   };
+
+  // ---------- research links ----------
+  const nwsUrl = city => 'https://forecast.weather.gov/zipcity.php?inputstring=' + encodeURIComponent(city);
+  let cities = ['College Station, TX', 'Las Vegas, NV', 'Kansas City, MO'];
+  try {
+    const c = JSON.parse(localStorage.getItem('katywins.cities') || 'null');
+    if (Array.isArray(c)) cities = c;
+  } catch (e) { /* storage unavailable: use defaults */ }
+  const saveCities = () => { try { localStorage.setItem('katywins.cities', JSON.stringify(cities)); } catch (e) {} };
+  function renderCities() {
+    const box = $('#cityChips');
+    box.innerHTML = '';
+    if (!cities.length) { box.innerHTML = '<span class="note">No saved cities yet.</span>'; return; }
+    cities.forEach(c => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      const a = document.createElement('a');
+      a.href = nwsUrl(c); a.target = '_blank'; a.rel = 'noopener'; a.textContent = c;
+      const x = document.createElement('button');
+      x.textContent = '×'; x.setAttribute('aria-label', 'Remove ' + c);
+      x.onclick = () => { cities = cities.filter(v => v !== c); saveCities(); renderCities(); };
+      chip.append(a, x);
+      box.appendChild(chip);
+    });
+  }
+  $('#cityGo').onclick = () => {
+    const c = $('#cityIn').value.trim();
+    if (c) window.open(nwsUrl(c), '_blank', 'noopener');
+  };
+  $('#cityIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('#cityGo').click(); });
+  $('#citySave').onclick = () => {
+    const c = $('#cityIn').value.trim();
+    if (c && !cities.some(v => v.toLowerCase() === c.toLowerCase())) { cities.push(c); saveCities(); renderCities(); }
+    $('#cityIn').value = '';
+  };
+  renderCities();
 
   // ---------- live Kalshi ----------
   function tickerFrom(input) {
