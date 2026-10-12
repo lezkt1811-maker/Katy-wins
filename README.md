@@ -17,7 +17,7 @@ Katy Wins does not claim to find profitable bets. It does the math honestly and 
 
 **Web app (phone or computer):** https://lezkt1811-maker.github.io/Katy-wins/
 
-1. **Screenshots tab.** Tap the pink box and pick one or more Kalshi screenshots (or paste one). Tap **READ SCREENSHOTS**.
+1. **Screenshots tab.** Tap the pink box and pick one or more Kalshi screenshots (or paste one). Tap **READ SCREENSHOTS**. It understands both kinds of Kalshi screen: market pages with **Yes 43¢ / No 59¢** buttons, and browse screens showing a payout and chance like **1.76x 54%** (the Yes price is worked out from the payout; No isn't shown there, so it's left blank). Overlapping screenshots won't add duplicates. The first read downloads the free text-reader once (about 10 MB).
 2. **Check the numbers.** Rows that look misread are marked ⚠ (for example, Yes + No not adding up to about 100–110¢). Fix them, and the warning clears. Missing prices are left blank, never guessed. Prices are the **Buy** prices.
 3. **Add YOUR %** for any outcome you have an opinion on (your chance it's a YES).
 4. Set your **stake per bet** and **how unsure** you are (± points). **Best options** ranks every side by the *cautious* expected return: if you say 70% ± 5, it uses 65%, so shaky edges sink.

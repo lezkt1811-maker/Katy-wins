@@ -56,18 +56,22 @@
       d.querySelector('.x').onclick = () => { URL.revokeObjectURL(s.url); state.shots.splice(i, 1); renderShots(); };
       box.appendChild(d);
     });
-    $('#readBtn').disabled = !state.shots.some(s => !s.done);
+    $('#readBtn').disabled = !state.shots.some(s => !s.done || s.status === 'couldn\'t read');
   }
   $('#clearShots').onclick = () => { state.shots.forEach(s => URL.revokeObjectURL(s.url)); state.shots = []; renderShots(); };
 
-  // Upscale + grayscale + boost contrast: phone screenshots of white-on-dark text read much better.
+  // Grayscale + invert dark mode + boost contrast. Small images are enlarged, but
+  // big phone screenshots are shrunk to 1600px wide: enlarging a 1080x2400
+  // screenshot made a canvas too big for phone memory and crashed the reader.
   function prepImage(file) {
     return new Promise((res, rej) => {
       const img = new Image();
+      const url = URL.createObjectURL(file);
       img.onload = () => {
-        const scale = img.width < 1400 ? 2 : 1;
+        URL.revokeObjectURL(url);
+        const scale = img.width < 800 ? 2 : img.width > 1600 ? 1600 / img.width : 1;
         const c = document.createElement('canvas');
-        c.width = img.width * scale; c.height = img.height * scale;
+        c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
         const g = c.getContext('2d');
         g.drawImage(img, 0, 0, c.width, c.height);
         const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
@@ -83,48 +87,81 @@
         g.putImageData(d, 0, 0);
         res(c);
       };
-      img.onerror = rej;
-      img.src = URL.createObjectURL(file);
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('image could not be opened')); };
+      img.src = url;
     });
   }
 
   let worker = null;
+  async function getWorker(bar) {
+    if (worker) return worker;
+    $('#ocrNote').textContent = 'Loading the free text-reader (first time only)…';
+    worker = await Tesseract.createWorker('eng', 1, {
+      logger: m => { if (m.status === 'recognizing text') bar.style.width = Math.round(m.progress * 100) + '%'; },
+    });
+    return worker;
+  }
+
   $('#readBtn').onclick = async () => {
-    const btn = $('#readBtn'), prog = $('#prog'), bar = prog.firstElementChild;
+    const btn = $('#readBtn'), prog = $('#prog'), bar = prog.firstElementChild, note = $('#ocrNote');
     btn.disabled = true; prog.style.display = 'block';
     const rawTexts = [];
+    let found = 0, failed = 0;
     try {
-      if (!worker) {
-        $('#ocrNote').textContent = 'Loading the free text-reader…';
-        worker = await Tesseract.createWorker('eng', 1, {
-          logger: m => { if (m.status === 'recognizing text') bar.style.width = Math.round(m.progress * 100) + '%'; },
-        });
-      }
-      let found = 0;
-      for (const s of state.shots.filter(x => !x.done)) {
-        s.status = 'reading…'; renderShots(); bar.style.width = '0';
-        const canvas = await prepImage(s.file);
-        const { data } = await worker.recognize(canvas);
-        rawTexts.push(data.text);
-        const outs = M.parseScreenshotText(data.text);
-        outs.forEach(o => state.rows.push({ label: o.label, yes: o.yesAsk ?? '', no: o.noAsk ?? '', mine: '', chance: o.chancePct, warn: o.warn }));
-        found += outs.length;
-        s.done = true; s.status = outs.length ? `✓ ${outs.length} found` : 'no prices found';
-        renderShots();
-      }
-      $('#ocrNote').textContent = found
-        ? `Found ${found} outcome${found > 1 ? 's' : ''}. Check the numbers below; rows marked ⚠ look misread. Missing prices are left blank, never guessed.`
-        : 'No prices recognized. Try a sharper screenshot, crop to the price list, or type the prices in below.';
-      $('#ocrNote').className = found ? 'note' : 'note warn';
+      if (typeof Tesseract === 'undefined') throw new Error('offline');
+      await getWorker(bar);
     } catch (err) {
       console.error(err);
-      $('#ocrNote').textContent = 'The text-reader could not load (needs internet the first time). You can still type prices in below.';
-      $('#ocrNote').className = 'note warn';
-    } finally {
-      prog.style.display = 'none';
-      if (rawTexts.length) { $('#raw').textContent = rawTexts.join('\n\n———\n\n'); $('#rawBox').classList.remove('hidden'); }
-      renderShots(); save(); renderTable(); compute();
+      note.textContent = navigator.onLine === false
+        ? 'You\'re offline. The text-reader downloads once (about 10 MB), so connect and try again. You can still type prices in below.'
+        : 'The text-reader didn\'t load. Refresh the page and try again. You can still type prices in below.';
+      note.className = 'note warn';
+      prog.style.display = 'none'; renderShots();
+      return;
     }
+    for (const s of state.shots.filter(x => !x.done || x.status === 'couldn\'t read')) {
+      try {
+        s.status = 'reading…'; renderShots(); bar.style.width = '0';
+        const canvas = await prepImage(s.file);
+        // tsv = word positions, used to rebuild rows the way they look on screen.
+        const { data } = await worker.recognize(canvas, {}, { text: true, tsv: true });
+        canvas.width = canvas.height = 0;            // free memory before the next image
+        const rowsText = data.tsv ? M.rowsFromTsv(data.tsv) : '';
+        let outs = rowsText ? M.parseScreenshotText(rowsText) : [];
+        if (!outs.length) outs = M.parseScreenshotText(data.text || '');
+        rawTexts.push(rowsText || data.text || '');
+        // Overlapping screenshots repeat outcomes; skip exact duplicates.
+        const key = r => `${String(r.label).toLowerCase()}|${r.yes}|${r.no}`;
+        const have = new Set(state.rows.map(key));
+        let added = 0;
+        outs.forEach(o => {
+          const row = { label: o.label, yes: o.yesAsk ?? '', no: o.noAsk ?? '', mine: '', chance: o.chancePct, warn: o.warn };
+          if (have.has(key(row))) return;
+          have.add(key(row)); state.rows.push(row); added++;
+        });
+        found += added;
+        s.status = outs.length ? (added ? `✓ ${added} found` : '✓ already added') : 'no prices found';
+      } catch (err) {
+        console.error(err);
+        failed++;
+        s.status = 'couldn\'t read';
+        // A crashed worker can't be reused; start a fresh one for the next image.
+        try { await worker.terminate(); } catch (e) {}
+        worker = null;
+        try { await getWorker(bar); } catch (e) { break; }
+      }
+      s.done = true;
+      renderShots();
+    }
+    let msg = found
+      ? `Found ${found} outcome${found > 1 ? 's' : ''}. Check them below; rows marked ⚠ need a look. Missing prices are left blank, never guessed.`
+      : 'No prices recognized. Screens that show a market\'s price list work best: Yes/No buttons, or payouts like "1.76x 54%". You can also type prices in below.';
+    if (failed) msg += ` ${failed} screenshot${failed > 1 ? 's' : ''} couldn't be read; try ${failed > 1 ? 'them' : 'it'} again alone.`;
+    note.textContent = msg;
+    note.className = found && !failed ? 'note' : 'note warn';
+    prog.style.display = 'none';
+    if (rawTexts.length) { $('#raw').textContent = rawTexts.join('\n\n———\n\n'); $('#rawBox').classList.remove('hidden'); }
+    renderShots(); save(); renderTable(); compute();
   };
 
   // ---------- live Kalshi ----------
@@ -216,6 +253,9 @@
     });
   }
   $('#addRow').onclick = () => { state.rows.push({ label: '', yes: '', no: '', mine: '' }); renderTable(); compute(); };
+  $('#clearRows').onclick = () => {
+    if (state.rows.length && confirm('Remove every row from the table?')) { state.rows = []; save(); renderTable(); compute(); }
+  };
   $('#stake').addEventListener('input', compute);
   $('#feeRate').addEventListener('input', compute);
   $('#unsure').addEventListener('input', compute);
@@ -252,7 +292,9 @@
     box.innerHTML = '';
     const over = M.overround(outcomes);
     const on = $('#overNote');
-    if (over && over > 100 && outcomes.length > 2) {
+    // Only meaningful for outcomes of ONE event (exactly one can win). A sum far above
+    // 100 means the rows are separate markets, so the note would mislead.
+    if (over && over > 100 && over <= 130 && outcomes.length > 2) {
       on.textContent = `YES prices add up to ${over}¢ across ${outcomes.length} outcomes, so the market keeps about ${over - 100}¢ per full set (only valid if exactly one outcome can win).`;
       on.classList.remove('hidden');
     } else on.classList.add('hidden');

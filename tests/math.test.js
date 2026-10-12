@@ -128,3 +128,27 @@ assert.strictEqual(M.parseScreenshotText(real).every(o => o.warn.length === 0), 
 assert.ok(M.reasonsToSkip({ anyYourProb: false, settledPicks: 0 }).length >= 2);
 assert.strictEqual(M.reasonsToSkip({ anyYourProb: true, anyCautiousPositive: true, settledPicks: 40, brierYou: .18, brierMarket: .2 }).length, 0);
 console.log('phase 2 tests passed');
+
+// Kalshi browse screen: payout multiplier + chance, volume lines, no Yes/No buttons
+const browse = M.parseScreenshotText(`Before Jan 1, 2028 6.73x 12%
+$40,094,376
+Las Vegas 1.76x 54%
+$290,994 2.64K
+College Station 1.73x 57%
+Up 11% Down 89%`);
+assert.deepStrictEqual(browse.map(o => [o.label, o.yesAsk, o.noAsk, o.chancePct]),
+  [['Before Jan 1, 2028', 15, null, 12], ['Las Vegas', 57, null, 54], ['College Station', 58, null, 57]]);
+assert.ok(browse[1].warn[0].includes('1.76x payout'));
+console.log('payout-screen parsing passed');
+
+// Real Tesseract word-box output (TSV) from phone-size mock screenshots.
+// Tesseract reads columns separately; rowsFromTsv must put each outcome back on one line.
+const fs = require('fs'), path = require('path');
+const fx = n => fs.readFileSync(path.join(__dirname, 'fixtures', n), 'utf8');
+const b2 = M.parseScreenshotText(M.rowsFromTsv(fx('browse_screen.tsv')));
+assert.deepStrictEqual(b2.map(o => [o.label, o.yesAsk, o.chancePct]),
+  [['Before Jan 1, 2028', 15, 12], ['Las Vegas', 57, 54], ['College Station', 58, 57], ['Above 90°F', 25, 24]]);
+const y2 = M.parseScreenshotText(M.rowsFromTsv(fx('yesno_screen.tsv')));
+assert.deepStrictEqual(y2.map(o => [o.yesAsk, o.noAsk]), [[43, 59], [32, 70], [13, 89]]);
+assert.strictEqual(M.rowsFromTsv(''), '');
+console.log('real OCR word-box fixtures passed');

@@ -213,7 +213,8 @@
     const y = o.yesAsk, n = o.noAsk;
     if (!o.label || /^Outcome \d+$/.test(o.label)) w.push('outcome name not read');
     if (y && n && (y + n < 98 || y + n > 115)) w.push(`Yes + No = ${y + n}¢ (normally 100–110¢)`);
-    if ((y && !n) || (!y && n)) w.push('only one price found');
+    if (o.payoutX) w.push(`Yes ≈ ${y}¢ (from ${o.payoutX}x payout) · No price not on this screen`);
+    else if ((y && !n) || (!y && n)) w.push('only one price found');
     if (o.chancePct != null && y && Math.abs(o.chancePct - y) > 15) w.push(`chance ${o.chancePct}% doesn't match Yes ${y}¢`);
     return w;
   }
@@ -240,6 +241,9 @@
     });
   }
   const DOLLAR_RE = /\$\s?0?\.(\d{2})/g;
+  // Kalshi's browse screens show a payout multiplier ("1.76x" = $1.76 back per $1 on YES)
+  // next to the chance %, instead of Yes/No buttons.
+  const MULT_RE = /(?:^|\s)(\d{1,3}(?:[.,]\d{1,2})?)\s*[x×X](?![a-z])/;
 
   function cleanLabel(s) {
     return s
@@ -248,10 +252,47 @@
       .replace(/\d{1,3}\s*%/g, ' ')
       .replace(/\d{1,2}\s*(?:¢|c\b|e\b)/g, ' ')
       .replace(/\$\s?0?\.\d{2}/g, ' ')
+      .replace(/\$\s?[\d,]+(?:\.\d+)?[KkMm]?/g, ' ')          // volume like $290,994
+      .replace(/(?:^|\s)\d{1,3}(?:[.,]\d{1,2})?\s*[x×X](?![a-z])/g, ' ')   // payout 1.76x
+      .replace(/(?:^|\s)\d+(?:\.\d+)?[KkMm](?![a-z])/g, ' ')    // counts like 2.64K
       .replace(/\b(buy|sell|chance|yes|no)\b/gi, ' ')
       .replace(/[|•·<>»«©®™_=~*]+/g, ' ')
       .replace(/\s{2,}/g, ' ')
       .trim();
+  }
+
+  /**
+   * Rebuild visual rows from Tesseract's word boxes (TSV output).
+   * Tesseract reads multi-column screens column by column, which separates an
+   * outcome's name from its prices. Grouping words by their vertical position
+   * puts "Las Vegas  1.76x  54%" back on one line, the way it looks on screen.
+   */
+  function rowsFromTsv(tsv) {
+    const words = [];
+    for (const ln of String(tsv || '').split(/\r?\n/)) {
+      const c = ln.split('\t');
+      if (c.length < 12 || c[0] !== '5') continue;          // level 5 = word
+      const text = c.slice(11).join('\t').trim();
+      const conf = parseFloat(c[10]);
+      if (!text || conf < 0) continue;
+      const left = +c[6], top = +c[7], width = +c[8], height = +c[9];
+      words.push({ text, left, top, width, height, cy: top + height / 2 });
+    }
+    if (!words.length) return '';
+    words.sort((a, b) => a.cy - b.cy);
+    const rows = [];
+    for (const w of words) {
+      const row = rows[rows.length - 1];
+      // Same row if vertical centers are close relative to text height.
+      if (row && Math.abs(w.cy - row.cy) <= Math.max(row.h, w.height) * 0.6) {
+        row.words.push(w);
+        row.cy = (row.cy * (row.words.length - 1) + w.cy) / row.words.length;
+        row.h = Math.max(row.h, w.height);
+      } else {
+        rows.push({ words: [w], cy: w.cy, h: w.height });
+      }
+    }
+    return rows.map(r => r.words.sort((a, b) => a.left - b.left).map(w => w.text).join(' ')).join('\n');
   }
 
   /**
@@ -274,10 +315,15 @@
       let yesAsk = yes ? +yes[1] : null;
       let noAsk = no ? +no[1] : null;
       const priceList = cents.length ? cents : dollars;
+      let payoutX = null;
       if (yesAsk === null && noAsk === null && priceList.length >= 2) {
         yesAsk = priceList[0]; noAsk = priceList[1];
       } else if (yesAsk === null && noAsk === null && priceList.length === 1 && pct) {
         yesAsk = priceList[0];
+      } else if (yesAsk === null && noAsk === null && !priceList.length) {
+        const mx = line.match(MULT_RE);
+        const m = mx ? parseFloat(mx[1].replace(',', '.')) : NaN;
+        if (m > 1.01 && m < 100) { payoutX = m; yesAsk = Math.min(99, Math.max(1, Math.round(100 / m))); }
       }
 
       const hasPrice = yesAsk !== null || noAsk !== null;
@@ -298,6 +344,7 @@
         noAsk: valid(noAsk),
         chancePct: pct ? Math.min(100, +pct[1]) : null,
         yourYesProb: null,
+        payoutX,
       });
       pendingLabel = '';
     }
@@ -319,7 +366,7 @@
   const api = {
     DEFAULT_FEE_RATE, feeCents, analyzeSide, rankOutcomes, overround,
     parseScreenshotText, brier, calibration, trackSummary, logLoss, maxDrawdown,
-    entryCost, reasonsToSkip, checkReading,
+    entryCost, reasonsToSkip, checkReading, rowsFromTsv,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.KatyMath = api;
