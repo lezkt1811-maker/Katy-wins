@@ -106,7 +106,7 @@
     const btn = $('#readBtn'), prog = $('#prog'), bar = prog.firstElementChild, note = $('#ocrNote');
     btn.disabled = true; prog.style.display = 'block';
     const rawTexts = [];
-    let found = 0, failed = 0;
+    let found = 0, failed = 0, dupes = 0;
     try {
       if (typeof Tesseract === 'undefined') throw new Error('offline');
       await getWorker(bar);
@@ -140,6 +140,7 @@
           have.add(key(row)); state.rows.push(row); added++;
         });
         found += added;
+        dupes += outs.length - added;
         s.status = outs.length ? (added ? `✓ ${added} found` : '✓ already added') : 'no prices found';
       } catch (err) {
         console.error(err);
@@ -154,11 +155,14 @@
       renderShots();
     }
     let msg = found
-      ? `Found ${found} outcome${found > 1 ? 's' : ''}. Check them below; rows marked ⚠ need a look. Missing prices are left blank, never guessed.`
+      ? `Found ${found} new outcome${found > 1 ? 's' : ''}. Check them below; rows marked ⚠ need a look. Missing prices are left blank, never guessed.`
+      : dupes
+      ? `Everything in ${dupes > 1 ? 'these screenshots is' : 'this screenshot is'} already in your table below, so nothing new was added.`
       : 'No prices recognized. Screens that show a market\'s price list work best: Yes/No buttons, or payouts like "1.76x 54%". You can also type prices in below.';
+    if (found && dupes) msg += ` ${dupes} already in the table were skipped.`;
     if (failed) msg += ` ${failed} screenshot${failed > 1 ? 's' : ''} couldn't be read; try ${failed > 1 ? 'them' : 'it'} again alone.`;
     note.textContent = msg;
-    note.className = found && !failed ? 'note' : 'note warn';
+    note.className = (found || dupes) && !failed ? 'note' : 'note warn';
     prog.style.display = 'none';
     if (rawTexts.length) { $('#raw').textContent = rawTexts.join('\n\n———\n\n'); $('#rawBox').classList.remove('hidden'); }
     renderShots(); save(); renderTable(); compute();
