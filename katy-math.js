@@ -303,7 +303,7 @@
   function parseScreenshotText(text) {
     const lines = text.split(/\r?\n/).map(l => fixOcrDigits(l.trim())).filter(Boolean);
     const outcomes = [];
-    let pendingLabel = '';
+    let pendingLabel = '', pendingChance = null;
 
     for (const line of lines) {
       const yes = line.match(YES_RE);
@@ -330,9 +330,9 @@
       const label = cleanLabel(line);
 
       if (!hasPrice) {
-        // A line with no price is probably the outcome name for the next price line.
-        if (label.length >= 2 && !pct) pendingLabel = label;
-        else if (pct && outcomes.length === 0) pendingLabel = label || pendingLabel;
+        // A line with no price is probably the outcome name (often with its chance %,
+        // like "66° to 67°  1%") for the Yes/No buttons on the next line.
+        if (label.length >= 2) { pendingLabel = label; pendingChance = pct ? Math.min(100, +pct[1]) : null; }
         continue;
       }
 
@@ -342,11 +342,11 @@
         label: finalLabel,
         yesAsk: valid(yesAsk),
         noAsk: valid(noAsk),
-        chancePct: pct ? Math.min(100, +pct[1]) : null,
+        chancePct: pct ? Math.min(100, +pct[1]) : (label.length >= 2 ? null : pendingChance),
         yourYesProb: null,
         payoutX,
       });
-      pendingLabel = '';
+      pendingLabel = ''; pendingChance = null;
     }
 
     // Merge a "Yes" line followed by a separate "No" line for the same outcome.

@@ -152,3 +152,25 @@ const y2 = M.parseScreenshotText(M.rowsFromTsv(fx('yesno_screen.tsv')));
 assert.deepStrictEqual(y2.map(o => [o.yesAsk, o.noAsk]), [[43, 59], [32, 70], [13, 89]]);
 assert.strictEqual(M.rowsFromTsv(''), '');
 console.log('real OCR word-box fixtures passed');
+
+// Kalshi market page: name + chance on one line, Yes/No buttons on the next.
+const lv = M.parseScreenshotText(`DAILY TEMPERATURE
+Highest temperature in Las Vegas today?
+71.2° forecast 0.5
+65° or below <1%
+Yes 1¢ No
+66° to 67° 1%
+Yes 2¢ No 99¢
+68° to 69° 13%
+Yes 14¢ No 87¢
+70° to 71° 45%
+Yes 42¢ No 59¢
+72° to 73° 39%
+Yes 39¢ No 62¢
+74° or above 7%
+Yes 7¢ No 95¢`);
+assert.deepStrictEqual(lv.map(o => [o.label, o.yesAsk, o.noAsk, o.chancePct]), [
+  ['65° or below', 1, null, 1], ['66° to 67°', 2, 99, 1], ['68° to 69°', 14, 87, 13],
+  ['70° to 71°', 42, 59, 45], ['72° to 73°', 39, 62, 39], ['74° or above', 7, 95, 7]]);
+assert.ok(lv.slice(1).every(o => o.warn.length === 0));
+console.log('market-page name lines passed');
