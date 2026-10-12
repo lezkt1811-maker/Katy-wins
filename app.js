@@ -107,13 +107,13 @@
         const { data } = await worker.recognize(canvas);
         rawTexts.push(data.text);
         const outs = M.parseScreenshotText(data.text);
-        outs.forEach(o => state.rows.push({ label: o.label, yes: o.yesAsk ?? '', no: o.noAsk ?? '', mine: '' }));
+        outs.forEach(o => state.rows.push({ label: o.label, yes: o.yesAsk ?? '', no: o.noAsk ?? '', mine: '', chance: o.chancePct, warn: o.warn }));
         found += outs.length;
         s.done = true; s.status = outs.length ? `✓ ${outs.length} found` : 'no prices found';
         renderShots();
       }
       $('#ocrNote').textContent = found
-        ? `Found ${found} outcome${found > 1 ? 's' : ''}. Check the numbers below; the reader can misread a digit.`
+        ? `Found ${found} outcome${found > 1 ? 's' : ''}. Check the numbers below; rows marked ⚠ look misread. Missing prices are left blank, never guessed.`
         : 'No prices recognized. Try a sharper screenshot, crop to the price list, or type the prices in below.';
       $('#ocrNote').className = found ? 'note' : 'note warn';
     } catch (err) {
@@ -158,11 +158,17 @@
         if (r.ok) { const j = await r.json(); if (j.market) markets = [j.market]; }
       }
       if (!markets.length) { note.className = 'note warn'; note.textContent = 'No open markets found for ' + t + '. Check the ticker.'; return; }
-      markets.forEach(m => state.rows.push({
-        label: m.yes_sub_title || m.subtitle || m.title || m.ticker,
-        yes: cents(m, 'yes_ask') || '', no: cents(m, 'no_ask') || '', mine: '',
-      }));
-      note.textContent = `Added ${markets.length} market${markets.length > 1 ? 's' : ''} at current Buy prices.`;
+      const fetchedAt = Date.now();
+      markets.forEach(m => {
+        const yesBid = cents(m, 'yes_bid');
+        // Buying NO = selling YES, so NO's ask is 100 - YES bid when Kalshi doesn't list it.
+        const noAsk = cents(m, 'no_ask') || (yesBid ? 100 - yesBid : null);
+        state.rows.push({
+          label: m.yes_sub_title || m.subtitle || m.title || m.ticker,
+          yes: cents(m, 'yes_ask') || '', no: noAsk || '', mine: '', fetchedAt,
+        });
+      });
+      note.textContent = `Added ${markets.length} market${markets.length > 1 ? 's' : ''} at Buy prices as of ${new Date(fetchedAt).toLocaleTimeString()}. Prices move; refresh before buying.`;
       save(); renderTable(); compute();
     } catch (err) {
       note.className = 'note warn';
@@ -182,9 +188,28 @@
         <td class="num" data-h="NO ¢"><input data-k="no" type="number" min="1" max="99" inputmode="numeric"></td>
         <td class="num" data-h="YOUR %"><input data-k="mine" type="number" min="0" max="100" inputmode="decimal" placeholder="optional"></td>
         <td><button class="del" aria-label="Delete row">✕</button></td>`;
+      const lbl = tr.querySelector('td.lbl');
+      const wn = document.createElement('div');
+      wn.className = 'rowwarn';
+      lbl.appendChild(wn);
+      const showWarn = () => {
+        const w = r.warn || [];
+        wn.textContent = w.length ? '⚠ ' + w.join(' · ') : '';
+        if (r.fetchedAt) wn.textContent += (w.length ? ' · ' : '') + 'live @ ' + new Date(r.fetchedAt).toLocaleTimeString();
+      };
+      showWarn();
       tr.querySelectorAll('input').forEach(inp => {
         inp.value = r[inp.dataset.k] ?? '';
-        inp.addEventListener('input', () => { r[inp.dataset.k] = inp.value; save(); compute(); });
+        inp.addEventListener('input', () => {
+          r[inp.dataset.k] = inp.value;
+          if (r.warn && inp.dataset.k !== 'mine') {
+            // Re-check once she edits a misread row.
+            r.warn = M.checkReading({ label: r.label, yesAsk: +r.yes || null, noAsk: +r.no || null, chancePct: r.chance ?? null });
+            showWarn();
+          }
+          if (inp.dataset.k !== 'mine' && r.fetchedAt) { delete r.fetchedAt; showWarn(); } // edited = no longer live
+          save(); compute();
+        });
       });
       tr.querySelector('.del').onclick = () => { state.rows.splice(i, 1); save(); renderTable(); compute(); };
       tb.appendChild(tr);
@@ -194,6 +219,8 @@
   $('#stake').addEventListener('input', compute);
   $('#feeRate').addEventListener('input', compute);
   $('#unsure').addEventListener('input', compute);
+  try { $('#category').value = localStorage.getItem('katywins.category') || ''; } catch (e) {}
+  $('#category').addEventListener('input', () => { try { localStorage.setItem('katywins.category', $('#category').value); } catch (e) {} });
 
   // ---------- results ----------
   const $$ = c => '$' + (c / 100).toFixed(2);
@@ -238,21 +265,42 @@
       [['YES', o.yesAsk, o.yourYesProb], ['NO', o.noAsk, o.yourYesProb === null ? null : 1 - o.yourYesProb]].forEach(([side, price, p]) => {
         if (!price) return;
         const a = M.analyzeSide(price, p, { contracts: contractsFor(stakeCents, price, rate), feeRate: rate, uncertainty });
-        if (a) sides.push(Object.assign({ label: o.label, side }, a));
+        if (a) sides.push(Object.assign({ label: o.label, side, feeRate: rate }, a));
       });
     }
     // Ranked by the cautious end of your range, so shaky edges sink.
     const valued = sides.filter(s => s.roi !== null).sort((a, b) => b.consRoi - a.consRoi);
     const market = sides.filter(s => s.roi === null).sort((a, b) => b.marketProb - a.marketProb);
 
+    // Verdict first: the tool's main job is telling her when NOT to bet.
+    const ages = state.rows.filter(r => r.fetchedAt).map(r => Date.now() - r.fetchedAt);
+    const track = M.trackSummary(state.track);
+    const skip = M.reasonsToSkip({
+      anyYourProb: valued.length > 0,
+      anyCautiousPositive: valued.some(v => v.consEvCents > 0),
+      anyBestGuessPositive: valued.some(v => v.evCents > 0),
+      uncertainRows: state.rows.filter(r => (r.warn || []).length).length,
+      staleMinutes: ages.length ? Math.floor(Math.max(...ages) / 60000) : null,
+      settledPicks: track.settled, brierYou: track.brierYou, brierMarket: track.brierMarket,
+    });
+    const cautiousPos = valued.some(v => v.consEvCents > 0);
+    const head = !valued.length ? 'NO RECOMMENDATION'
+      : !cautiousPos ? 'SKIP: NO VALUE BET RIGHT NOW'
+      : skip.length ? 'POSSIBLE VALUE, WITH WARNINGS' : 'STRONGEST CANDIDATE BELOW';
+    const vb = document.createElement('div');
+    vb.className = 'pick ' + (!cautiousPos ? 'bad' : skip.length ? 'warnbox' : '');
+    vb.innerHTML = `<h3>${head}</h3>`;
+    if (skip.length) {
+      const ul = document.createElement('ul');
+      ul.className = 'reasons';
+      skip.forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+      vb.appendChild(ul);
+    } else {
+      vb.insertAdjacentHTML('beforeend', '<p class="note" style="margin:0">No red flags found. The #1 pick is the strongest candidate under your numbers, not a sure thing.</p>');
+    }
+    box.appendChild(vb);
+
     if (valued.length) {
-      const best = valued[0];
-      if (best.consEvCents <= 0) {
-        const why = best.evCents > 0
-          ? 'Your best guess shows a small edge, but it disappears at the cautious end of your range.'
-          : 'With your chances and the fees, every option loses money on average.';
-        box.insertAdjacentHTML('beforeend', `<div class="pick bad"><h3>NO VALUE BET RIGHT NOW</h3><p class="note" style="margin:0">${why} Skipping is the winning move here.</p></div>`);
-      }
       valued.forEach((s, i) => box.appendChild(card(s, i + 1, s.consEvCents > 0 ? '' : 'bad')));
     }
     if (market.length) {
@@ -298,6 +346,7 @@
           id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10),
           label: s.label, side: s.side, price: s.priceCents, contracts: s.contracts,
           totalCost: s.totalCost, prob: s.yourProb, marketProb: s.marketProb, won: null,
+          category: ($('#category').value || '').trim(), kind: 'prediction', fillPrice: null, feeRate: s.feeRate,
         });
         saveTrack(); renderTrack();
         b.textContent = 'SAVED ✓'; b.disabled = true;
@@ -308,6 +357,15 @@
   }
 
   // ---------- track record ----------
+  const money = c => (c >= 0 ? '+' : '−') + $$(Math.abs(c));
+  const signCls = v => (v > 0 ? 'good' : v < 0 ? 'neg' : '');
+  const statGrid = rows => {
+    const g = document.createElement('div');
+    g.className = 'stats';
+    g.innerHTML = rows.map(([k, v, c]) => `<div class="stat"><span>${k}</span><b class="${c || ''}">${v}</b></div>`).join('');
+    return g;
+  };
+
   function renderTrack() {
     const box = $('#track');
     box.innerHTML = '';
@@ -316,31 +374,58 @@
       return;
     }
     const s = M.trackSummary(state.track);
-    const stats = [
+    const f3 = v => (v === null ? '-' : v.toFixed(3));
+    box.appendChild(statGrid([
       ['Settled', `${s.settled} <small>(${s.open} open)</small>`],
       ['Won', s.settled ? `${s.wins} / ${s.settled}` : '-'],
-      ['Net profit', s.settled ? (s.pnlCents >= 0 ? '+' : '−') + $$(Math.abs(s.pnlCents)) : '-', s.pnlCents > 0 ? 'good' : s.pnlCents < 0 ? 'neg' : ''],
-      ['Return on staked', s.returnPct === null ? '-' : (s.returnPct * 100).toFixed(1) + '%', s.returnPct > 0 ? 'good' : s.returnPct < 0 ? 'neg' : ''],
-      ['Your accuracy (Brier)', s.brierYou === null ? '-' : s.brierYou.toFixed(3)],
-      ['Market accuracy (Brier)', s.brierMarket === null ? '-' : s.brierMarket.toFixed(3)],
-    ];
-    const g = document.createElement('div');
-    g.className = 'stats';
-    g.innerHTML = stats.map(([k, v, c]) => `<div class="stat"><span>${k}</span><b class="${c || ''}">${v}</b></div>`).join('');
-    box.appendChild(g);
+      ['Net profit', s.settled ? money(s.pnlCents) : '-', signCls(s.pnlCents)],
+      ['Return on staked', s.returnPct === null ? '-' : (s.returnPct * 100).toFixed(1) + '%', signCls(s.returnPct)],
+      ['Expected (your %)', s.settled ? money(Math.round(s.expectedCents)) : '-'],
+      ['Worst drop (drawdown)', s.settled ? '−' + $$(s.maxDrawdownCents) : '-', s.maxDrawdownCents > 0 ? 'neg' : ''],
+      ['Brier: you / market', `${f3(s.brierYou)} / ${f3(s.brierMarket)}`],
+      ['Log loss: you / market', `${f3(s.logLossYou)} / ${f3(s.logLossMarket)}`],
+    ]));
 
     let verdict;
-    if (s.settled < 30) verdict = `Only ${s.settled} settled pick${s.settled === 1 ? '' : 's'}. You need about 30+ before these numbers mean much; luck dominates small samples.`;
-    else if (s.brierYou < s.brierMarket) verdict = 'Your probabilities have been more accurate than the market\'s (lower Brier). That\'s the sign of a real edge. Keep tracking.';
-    else verdict = 'The market\'s prices have been more accurate than your probabilities. Bet smaller or not at all until that changes.';
-    box.insertAdjacentHTML('beforeend', `<p class="note">${verdict} Lower Brier = more accurate; 0.25 is coin-flip guessing.</p>`);
+    if (s.settled < 30) verdict = `Only ${s.settled} settled pick${s.settled === 1 ? '' : 's'}: far too few to tell skill from luck.`;
+    else if (s.settled < 200) verdict = (s.brierYou < s.brierMarket
+      ? 'So far your probabilities beat the market\'s. Encouraging, but '
+      : 'So far the market\'s prices beat your probabilities. Bet smaller or not at all; ') + `${s.settled} picks is an early checkpoint, not proof. Hundreds are needed.`;
+    else verdict = s.brierYou < s.brierMarket
+      ? `Across ${s.settled} picks your probabilities beat the market's. That's real evidence of an edge. Keep checking it holds.`
+      : `Across ${s.settled} picks the market has been more accurate than you. The evidence says you don't have an edge here.`;
+    box.insertAdjacentHTML('beforeend', `<p class="note">${verdict} Lower Brier and log loss = more accurate (coin-flip guessing scores 0.250 and 0.693). "Expected" is what your % predicted you'd make; if actual profit keeps falling short, your % runs too high.</p>`);
+
+    if (s.trades) {
+      box.insertAdjacentHTML('beforeend', '<p class="note" style="margin-bottom:0"><b>Real trades only</b> (picks marked REAL, using the price you actually paid):</p>');
+      box.appendChild(statGrid([
+        ['Settled', s.trades.n], ['Net profit', money(s.trades.pnlCents), signCls(s.trades.pnlCents)],
+        ['Return on staked', (s.trades.returnPct * 100).toFixed(1) + '%', signCls(s.trades.returnPct)],
+      ]));
+    }
 
     const cal = document.createElement('div');
     cal.className = 'calib';
     cal.innerHTML = s.calibration.map(b =>
       `<div>${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%<b>${b.n ? Math.round(b.actual * 100) + '%' : '-'}</b>won · ${b.n}</div>`).join('');
-    box.insertAdjacentHTML('beforeend', '<p class="note" style="margin-bottom:0">Calibration: when you said this range, how often it actually won.</p>');
+    box.insertAdjacentHTML('beforeend', '<p class="note" style="margin-bottom:0">Calibration: when you said this range, how often it actually won. Bands with under 10 picks are mostly noise.</p>');
     box.appendChild(cal);
+
+    if (s.byCategory.length > 1 || (s.byCategory[0] && s.byCategory[0].category !== 'Uncategorized')) {
+      const t = document.createElement('table');
+      t.className = 'tbl cat';
+      t.innerHTML = '<thead><tr><th>CATEGORY</th><th>PICKS</th><th>PROFIT</th><th>BRIER YOU / MKT</th></tr></thead>';
+      const tb = document.createElement('tbody');
+      s.byCategory.forEach(c => {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td'); td.textContent = c.category; tr.appendChild(td);
+        tr.insertAdjacentHTML('beforeend', `<td>${c.n} <small>(${c.wins} won)</small></td><td class="${signCls(c.pnlCents)}">${money(c.pnlCents)}</td><td>${f3(c.brierYou)} / ${f3(c.brierMarket)}</td>`);
+        tb.appendChild(tr);
+      });
+      t.appendChild(tb);
+      box.insertAdjacentHTML('beforeend', '<p class="note" style="margin-bottom:0">By category: where your edge is (or isn\'t).</p>');
+      box.appendChild(t);
+    }
 
     state.track.forEach(e => {
       const it = document.createElement('div');
@@ -350,39 +435,104 @@
       what.innerHTML = `<span class="side ${e.side}">${e.side}</span>`;
       what.appendChild(document.createTextNode(e.label));
       const sm = document.createElement('small');
-      sm.textContent = `${e.date} · ${e.contracts} @ ${e.price}¢ · cost ${$$(e.totalCost)} · you ${pct(e.prob)} · market ${pct(e.marketProb)}`;
+      const paid = e.fillPrice ? ` · paid ${e.fillPrice}¢` : '';
+      sm.textContent = `${e.date}${e.category ? ' · ' + e.category : ''} · ${e.contracts} @ ${e.price}¢${paid} · cost ${$$(M.entryCost(e))} · you ${pct(e.prob)} · market ${pct(e.marketProb)}`;
       what.appendChild(sm);
       it.appendChild(what);
       const btns = document.createElement('div');
       btns.className = 'row';
+      const kind = document.createElement('button');
+      kind.className = 'mini kind' + (e.kind === 'trade' ? ' on' : '');
+      kind.textContent = e.kind === 'trade' ? 'REAL' : 'PAPER';
+      kind.title = 'PAPER = a prediction you tracked. REAL = you actually bought it.';
+      kind.onclick = () => { e.kind = e.kind === 'trade' ? 'prediction' : 'trade'; saveTrack(); renderTrack(); };
+      btns.appendChild(kind);
+      if (e.kind === 'trade') {
+        const fill = document.createElement('input');
+        fill.type = 'number'; fill.min = 1; fill.max = 99; fill.className = 'fill';
+        fill.placeholder = 'paid ¢'; fill.title = 'Price you actually paid per contract';
+        fill.value = e.fillPrice ?? '';
+        fill.addEventListener('change', () => { const v = +fill.value; e.fillPrice = v >= 1 && v <= 99 ? v : null; saveTrack(); renderTrack(); });
+        btns.appendChild(fill);
+      }
       [['WON', true, 'won'], ['LOST', false, 'lost']].forEach(([t, v, c]) => {
         const b = document.createElement('button');
         b.className = `mini ${c}` + (e.won === v ? ' on' : '');
         b.textContent = t;
-        b.onclick = () => { e.won = e.won === v ? null : v; saveTrack(); renderTrack(); };
+        b.onclick = () => { e.won = e.won === v ? null : v; saveTrack(); renderTrack(); compute(); };
         btns.appendChild(b);
       });
       const rm = document.createElement('button');
       rm.className = 'mini rm'; rm.textContent = '✕'; rm.setAttribute('aria-label', 'Remove pick');
-      rm.onclick = () => { state.track = state.track.filter(x => x !== e); saveTrack(); renderTrack(); };
+      rm.onclick = () => { state.track = state.track.filter(x => x !== e); saveTrack(); renderTrack(); compute(); };
       btns.appendChild(rm);
       it.appendChild(btns);
       box.appendChild(it);
     });
   }
+
+  // ---------- backup, export, restore ----------
+  const CSV_HEAD = ['date', 'outcome', 'side', 'price_cents', 'contracts', 'total_cost_cents', 'your_prob', 'market_prob',
+    'result', 'category', 'kind', 'fill_price_cents', 'fee_rate'];
+  function download(name, text, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
   $('#clearTrack').onclick = () => {
-    if (state.track.length && confirm('Delete your whole track record?')) { state.track = []; saveTrack(); renderTrack(); }
+    if (state.track.length && confirm('Delete your whole track record? Export a backup first if you want to keep it.')) {
+      state.track = []; saveTrack(); renderTrack(); compute();
+    }
   };
   $('#exportTrack').onclick = () => {
-    const head = 'date,outcome,side,price_cents,contracts,total_cost_cents,your_prob,market_prob,result';
-    const q = v => `"${String(v).replace(/"/g, '""')}"`;
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = state.track.map(e => [e.date, q(e.label), e.side, e.price, e.contracts, e.totalCost, e.prob, e.marketProb,
-      e.won === null ? 'open' : e.won ? 'won' : 'lost'].join(','));
-    const blob = new Blob([[head, ...lines].join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'katy-wins-track-record.csv'; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      e.won === null ? 'open' : e.won ? 'won' : 'lost', q(e.category || ''), e.kind || 'prediction', e.fillPrice ?? '', e.feeRate ?? ''].join(','));
+    download('katy-wins-track-record.csv', [CSV_HEAD.join(','), ...lines].join('\n'), 'text/csv');
   };
+
+  // Minimal CSV reader for our own export (quoted fields, doubled quotes).
+  function parseCsv(text) {
+    const rows = []; let row = [], cur = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += c;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter(r => r.length > 1);
+  }
+  $('#restoreTrack').onclick = () => $('#restoreFile').click();
+  $('#restoreFile').addEventListener('change', async ev => {
+    const f = ev.target.files[0]; ev.target.value = '';
+    if (!f) return;
+    try {
+      const rows = parseCsv(await f.text());
+      const h = rows.shift().map(x => x.trim());
+      const idx = k => h.indexOf(k);
+      if (idx('outcome') < 0 || idx('your_prob') < 0) throw new Error('not a Katy Wins CSV');
+      const num = v => (v === '' || v == null ? null : +v);
+      const loaded = rows.map((r, i) => ({
+        id: Date.now() + i, date: r[idx('date')], label: r[idx('outcome')], side: r[idx('side')],
+        price: num(r[idx('price_cents')]), contracts: num(r[idx('contracts')]), totalCost: num(r[idx('total_cost_cents')]),
+        prob: num(r[idx('your_prob')]), marketProb: num(r[idx('market_prob')]),
+        won: r[idx('result')] === 'won' ? true : r[idx('result')] === 'lost' ? false : null,
+        category: idx('category') >= 0 ? r[idx('category')] : '', kind: idx('kind') >= 0 ? r[idx('kind')] || 'prediction' : 'prediction',
+        fillPrice: idx('fill_price_cents') >= 0 ? num(r[idx('fill_price_cents')]) : null,
+        feeRate: idx('fee_rate') >= 0 ? num(r[idx('fee_rate')]) ?? undefined : undefined,
+      })).filter(e => e.label && e.prob != null && e.contracts > 0 && e.totalCost > 0);
+      if (!loaded.length) throw new Error('no valid picks');
+      const replace = state.track.length && confirm(`Restore ${loaded.length} picks.\nOK = replace your current ${state.track.length} picks\nCancel = add them to your current picks`);
+      state.track = replace ? loaded : loaded.concat(state.track);
+      saveTrack(); renderTrack(); compute();
+    } catch (err) {
+      alert('Could not restore that file: ' + err.message + '. Use a CSV exported from Katy Wins.');
+    }
+  });
 
   renderTable(); compute(); renderShots(); renderTrack();
 })();

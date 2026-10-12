@@ -84,17 +84,83 @@
     });
   }
 
+  // Log loss punishes confident misses hard. Lower is better; 0.693 = coin flip.
+  function logLoss(entries, key) {
+    const s = entries.filter(e => typeof e.won === 'boolean' && e[key] != null);
+    if (!s.length) return null;
+    const eps = 1e-6;
+    return -s.reduce((t, e) => {
+      const p = Math.min(1 - eps, Math.max(eps, e[key]));
+      return t + (e.won ? Math.log(p) : Math.log(1 - p));
+    }, 0) / s.length;
+  }
+
+  // What a pick really cost: the price you actually paid if you entered one.
+  function entryCost(e) {
+    if (e.fillPrice >= 1 && e.fillPrice <= 99) {
+      return e.fillPrice * e.contracts + feeCents(e.fillPrice, e.contracts, e.feeRate);
+    }
+    return e.totalCost;
+  }
+  const entryPnl = e => (e.won ? 100 * e.contracts : 0) - entryCost(e);
+  const entryEv = e => e.prob * 100 * e.contracts - entryCost(e);
+
+  // Largest peak-to-trough fall in running profit, in settle order.
+  function maxDrawdown(settled) {
+    const seq = settled.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.id || 0) - (b.id || 0));
+    let run = 0, peak = 0, dd = 0;
+    for (const e of seq) { run += entryPnl(e); peak = Math.max(peak, run); dd = Math.max(dd, peak - run); }
+    return dd;
+  }
+
+  function groupStats(settled) {
+    if (!settled.length) return null;
+    const pnl = settled.reduce((t, e) => t + entryPnl(e), 0);
+    const staked = settled.reduce((t, e) => t + entryCost(e), 0);
+    return {
+      n: settled.length, wins: settled.filter(e => e.won).length,
+      pnlCents: pnl, stakedCents: staked, returnPct: staked ? pnl / staked : null,
+      expectedCents: settled.reduce((t, e) => t + entryEv(e), 0),
+      brierYou: brier(settled, 'prob'), brierMarket: brier(settled, 'marketProb'),
+    };
+  }
+
   function trackSummary(entries) {
     const settled = entries.filter(e => typeof e.won === 'boolean');
-    const pnl = settled.reduce((t, e) => t + (e.won ? 100 * e.contracts - e.totalCost : -e.totalCost), 0);
-    const staked = settled.reduce((t, e) => t + e.totalCost, 0);
+    const all = groupStats(settled) || { n: 0, wins: 0, pnlCents: 0, stakedCents: 0, returnPct: null, expectedCents: 0, brierYou: null, brierMarket: null };
+    const cats = {};
+    for (const e of settled) (cats[(e.category || 'Uncategorized').trim() || 'Uncategorized'] ||= []).push(e);
+    const trades = settled.filter(e => e.kind === 'trade');
     return {
       total: entries.length, settled: settled.length, open: entries.length - settled.length,
-      wins: settled.filter(e => e.won).length,
-      pnlCents: pnl, stakedCents: staked, returnPct: staked ? pnl / staked : null,
-      brierYou: brier(settled, 'prob'), brierMarket: brier(settled, 'marketProb'),
+      wins: all.wins, pnlCents: all.pnlCents, stakedCents: all.stakedCents, returnPct: all.returnPct,
+      expectedCents: all.expectedCents,
+      brierYou: all.brierYou, brierMarket: all.brierMarket,
+      logLossYou: logLoss(settled, 'prob'), logLossMarket: logLoss(settled, 'marketProb'),
+      maxDrawdownCents: maxDrawdown(settled),
       calibration: calibration(settled),
+      byCategory: Object.keys(cats).sort().map(k => Object.assign({ category: k }, groupStats(cats[k]))),
+      trades: groupStats(trades),
     };
+  }
+
+  // ---------- Honest "should I bet at all?" check ----------
+  // Returns plain-language reasons NOT to bet. An empty list means none found.
+  function reasonsToSkip(ctx) {
+    const r = [];
+    if (!ctx.anyYourProb) r.push('You haven\'t entered YOUR % anywhere, so nothing here can be called a good bet. The price is just the crowd\'s guess.');
+    if (ctx.anyYourProb && !ctx.anyCautiousPositive) {
+      r.push(ctx.anyBestGuessPositive
+        ? 'Your best guess shows an edge, but it disappears at the cautious end of your range.'
+        : 'Every option loses money on average once fees are included.');
+    }
+    if (ctx.uncertainRows) r.push(ctx.uncertainRows === 1
+      ? '1 row looks misread (marked ⚠). Fix it before trusting the results.'
+      : `${ctx.uncertainRows} rows look misread (marked ⚠). Fix them before trusting the results.`);
+    if (ctx.staleMinutes !== null && ctx.staleMinutes !== undefined && ctx.staleMinutes >= 10) r.push(`Live prices are ${ctx.staleMinutes} minutes old. Refresh before buying.`);
+    if (ctx.settledPicks < 30) r.push(`Your track record has ${ctx.settledPicks} settled pick${ctx.settledPicks === 1 ? '' : 's'}. There's no evidence yet that your % beats the market.`);
+    else if (ctx.brierYou !== null && ctx.brierMarket !== null && ctx.brierYou >= ctx.brierMarket) r.push('So far the market\'s prices have been more accurate than your probabilities.');
+    return r;
   }
 
   /**
@@ -137,6 +203,20 @@
   }
 
   // ---------- Screenshot text parsing ----------
+
+  /**
+   * Plain-language reasons a row read from a screenshot may be wrong.
+   * Kalshi's Yes ask + No ask is normally 100¢ plus a small spread.
+   */
+  function checkReading(o) {
+    const w = [];
+    const y = o.yesAsk, n = o.noAsk;
+    if (!o.label || /^Outcome \d+$/.test(o.label)) w.push('outcome name not read');
+    if (y && n && (y + n < 98 || y + n > 115)) w.push(`Yes + No = ${y + n}¢ (normally 100–110¢)`);
+    if ((y && !n) || (!y && n)) w.push('only one price found');
+    if (o.chancePct != null && y && Math.abs(o.chancePct - y) > 15) w.push(`chance ${o.chancePct}% doesn't match Yes ${y}¢`);
+    return w;
+  }
 
   // OCR often reads ¢ as c, e, ¢, or drops it. Accept "62¢", "62c", "62 ¢".
   const CENT_RE = /(\d{1,2})\s*(?:¢|c\b|e\b|C\b)/g;
@@ -232,12 +312,14 @@
       }
       merged.push(o);
     }
+    merged.forEach(o => { o.warn = checkReading(o); });
     return merged;
   }
 
   const api = {
     DEFAULT_FEE_RATE, feeCents, analyzeSide, rankOutcomes, overround,
-    parseScreenshotText, brier, calibration, trackSummary,
+    parseScreenshotText, brier, calibration, trackSummary, logLoss, maxDrawdown,
+    entryCost, reasonsToSkip, checkReading,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.KatyMath = api;

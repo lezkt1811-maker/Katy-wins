@@ -87,3 +87,44 @@ assert.ok(Math.abs(s.brierYou - (0.09 + 0.49 + 0.04) / 3) < 1e-9);
 assert.ok(Math.abs(s.brierMarket - (0.16 + 0.36 + 0.09) / 3) < 1e-9);
 assert.strictEqual(s.calibration[3].n, 2);
 console.log('track record tests passed');
+
+// ---- phase 2 ----
+// Log loss: coin-flip forecast = ln 2
+assert.ok(Math.abs(M.logLoss([{ p: 0.5, won: true }, { p: 0.5, won: false }], 'p') - Math.log(2)) < 1e-9);
+// Confident miss is punished hard but stays finite
+assert.ok(M.logLoss([{ p: 1, won: false }], 'p') > 10);
+
+// Fill price overrides saved cost (prediction at 60c, actually paid 67c)
+const fe = { contracts: 10, totalCost: 607, fillPrice: 67 };
+assert.strictEqual(M.entryCost(fe), 670 + M.feeCents(67, 10));
+
+// Drawdown: +38, -62, -32, +38 => peak 38, trough -56 => 94
+const dd = [
+  { id: 1, date: '2026-10-01', prob: .6, contracts: 1, totalCost: 62, won: true },
+  { id: 2, date: '2026-10-02', prob: .6, contracts: 1, totalCost: 62, won: false },
+  { id: 3, date: '2026-10-03', prob: .6, contracts: 1, totalCost: 32, won: false },
+  { id: 4, date: '2026-10-04', prob: .6, contracts: 1, totalCost: 62, won: true },
+];
+assert.strictEqual(M.maxDrawdown(dd), 94);
+
+// Categories + trades split
+const t2 = M.trackSummary([
+  { prob: .7, marketProb: .6, won: true, totalCost: 62, contracts: 1, category: 'Weather', kind: 'trade' },
+  { prob: .4, marketProb: .5, won: false, totalCost: 52, contracts: 1, category: 'Sports', kind: 'prediction' },
+]);
+assert.deepStrictEqual(t2.byCategory.map(c => [c.category, c.n]), [['Sports', 1], ['Weather', 1]]);
+assert.strictEqual(t2.trades.n, 1);
+assert.strictEqual(t2.trades.pnlCents, 38);
+assert.ok(Math.abs(t2.expectedCents - ((70 - 62) + (40 - 52))) < 1e-9);
+
+// Reading checks: flags suspicious rows, never invents prices
+const bad = M.parseScreenshotText('Rain in KC?\nYes 61¢ No 11¢\nSnow 45% 38¢');
+assert.ok(bad[0].warn.some(w => w.includes('Yes + No')));
+assert.ok(bad[1].warn.includes('only one price found'));
+assert.strictEqual(bad[1].noAsk, null);
+assert.strictEqual(M.parseScreenshotText(real).every(o => o.warn.length === 0), true);
+
+// Skip reasons
+assert.ok(M.reasonsToSkip({ anyYourProb: false, settledPicks: 0 }).length >= 2);
+assert.strictEqual(M.reasonsToSkip({ anyYourProb: true, anyCautiousPositive: true, settledPicks: 40, brierYou: .18, brierMarket: .2 }).length, 0);
+console.log('phase 2 tests passed');

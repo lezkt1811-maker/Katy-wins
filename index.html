@@ -103,6 +103,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:#05040b;border:1px sol
 .calib{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}
 .calib div{background:#05040b;border:1px solid var(--line);border-radius:8px;padding:6px;text-align:center;font-size:.72rem;color:var(--dim)}
 .calib b{display:block;color:var(--cyan);font-size:.9rem}
+.rowwarn{font-size:.72rem;color:var(--orange);margin-top:3px;min-height:0}
+.rowwarn:empty{display:none}
+.pick.warnbox{border-color:var(--orange);background:rgba(255,138,0,.05);box-shadow:0 0 18px rgba(255,138,0,.2)}
+.reasons{margin:4px 0 0;padding-left:18px;color:var(--text)}
+.reasons li{margin:4px 0}
+.mini.kind{border:1px solid var(--violet);color:var(--violet)}
+.mini.kind.on{background:var(--violet);color:#000}
+input.fill{width:76px;padding:5px 7px;font-size:.8rem}
+.tbl.cat td{font-size:.85rem}
+.tbl.cat td.good{color:var(--lime)}.tbl.cat td.neg{color:var(--red)}
 footer{color:var(--dim);font-size:.8rem;text-align:center;margin-top:28px}
 footer b{color:var(--orange)}
 @media (max-width:640px){
@@ -180,6 +190,7 @@ footer b{color:var(--orange)}
       <button class="btn cyan" id="addRow">+ ADD ROW</button>
       <label class="f">STAKE PER BET ($)<input id="stake" type="number" min="1" step="1" value="10" inputmode="decimal" style="width:120px"></label>
       <label class="f">FEE RATE<input id="feeRate" type="number" min="0" max="0.2" step="0.005" value="0.07" inputmode="decimal" style="width:100px"></label>
+      <label class="f">CATEGORY<input id="category" placeholder="e.g. Weather" maxlength="30" style="width:140px"></label>
       <label class="f">HOW UNSURE (± %)<input id="unsure" type="number" min="0" max="50" step="1" value="5" inputmode="decimal" style="width:110px"></label>
     </div>
     <p class="note">HOW UNSURE: if you say 70% but could be off by 5, bets are ranked using 65%, the cautious end. Set it from your track record once you have one.</p>
@@ -195,10 +206,12 @@ footer b{color:var(--orange)}
   <!-- TRACK RECORD -->
   <section class="panel">
     <h2>04 // TRACK RECORD</h2>
-    <p class="note" style="margin-top:0">Save picks (or paper picks you didn't buy), then mark them WON or LOST when they settle. This shows whether your % beats the market. That's the only real proof you have an edge.</p>
+    <p class="note" style="margin-top:0">Save picks, then mark them WON or LOST when they settle. Tap PAPER to switch a pick to REAL if you actually bought it, and enter the price you really paid. This shows whether your % beats the market, which is the only real proof of an edge. Picks are saved in this browser only, so back them up with the CSV button.</p>
     <div id="track"></div>
     <div class="row" style="margin-top:12px">
-      <button class="btn cyan" id="exportTrack">EXPORT CSV</button>
+      <button class="btn cyan" id="exportTrack">EXPORT / BACKUP CSV</button>
+      <button class="btn" id="restoreTrack">RESTORE FROM CSV</button>
+      <input type="file" id="restoreFile" accept=".csv,text/csv" class="hidden">
       <button class="btn pink" id="clearTrack">CLEAR ALL</button>
     </div>
   </section>

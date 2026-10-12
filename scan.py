@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from scanner.analyzer import load_probabilities, rank
 from scanner.fees import DEFAULT_FEE_RATE
@@ -66,7 +67,9 @@ def main(argv=None) -> int:
     res = rank(markets, probs, int(a.stake * 100), a.fee_rate, a.min_volume,
                uncertainty=a.uncertainty / 100, max_spread=a.max_spread, hide_flagged=a.hide_flagged)
 
-    print(f"{C['pink']}=== KATY WINS ==={C['end']}  {len(markets)} markets · stake {money(a.stake * 100)} per bet\n")
+    when = time.strftime("%H:%M:%S", time.localtime(getattr(client, "last_fetch", None) or time.time()))
+    print(f"{C['pink']}=== KATY WINS ==={C['end']}  {len(markets)} markets · stake {money(a.stake * 100)} per bet"
+          f" · prices as of {when}\n")
     if res["valued"]:
         print(f"{C['yel']}Ranked by cautious expected return per $1 (your % minus {a.uncertainty:g} pts, fees included):{C['end']}")
         for i, r in enumerate(res["valued"][: a.top], 1):
