@@ -67,3 +67,23 @@ const pr = M.parseScreenshotText(real);
 assert.deepStrictEqual(pr.map(o => [o.label, o.yesAsk, o.noAsk, o.chancePct]),
   [['85° to 86°', 43, 59, 42], ['87° to 88°', 32, 70, 31], ['Above 88°', 13, 89, 12]]);
 console.log('real OCR sample parsed');
+
+// Conservative estimate
+const c = M.analyzeSide(58, 0.70, { contracts: 1, uncertainty: 0.07 });
+assert.ok(Math.abs(c.consProb - 0.63) < 1e-9);
+assert.ok(c.consEvCents < c.evCents && c.consEvCents > 0);   // 63 - 60 = +3
+
+// Track record
+const log = [
+  { prob: 0.7, marketProb: 0.6, won: true, totalCost: 62, contracts: 1 },
+  { prob: 0.7, marketProb: 0.6, won: false, totalCost: 62, contracts: 1 },
+  { prob: 0.2, marketProb: 0.3, won: false, totalCost: 32, contracts: 1 },
+  { prob: 0.5, marketProb: 0.5, won: null, totalCost: 52, contracts: 1 },
+];
+const s = M.trackSummary(log);
+assert.strictEqual(s.settled, 3); assert.strictEqual(s.open, 1); assert.strictEqual(s.wins, 1);
+assert.strictEqual(s.pnlCents, 38 - 62 - 32);
+assert.ok(Math.abs(s.brierYou - (0.09 + 0.49 + 0.04) / 3) < 1e-9);
+assert.ok(Math.abs(s.brierMarket - (0.16 + 0.36 + 0.09) / 3) < 1e-9);
+assert.strictEqual(s.calibration[3].n, 2);
+console.log('track record tests passed');

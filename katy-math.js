@@ -45,14 +45,56 @@
       breakEven, marketProb,
       payoutMultiple: (100 * contracts) / totalCost,         // $ back per $1 if it wins
       yourProb: null, edge: null, evCents: null, roi: null,
+      consProb: null, consEvCents: null, consRoi: null,
     };
     if (yourProb !== null && yourProb !== undefined && yourProb >= 0 && yourProb <= 1) {
       out.yourProb = yourProb;
       out.edge = yourProb - breakEven;                       // + means worth it
       out.evCents = yourProb * 100 * contracts - totalCost;  // expected profit
       out.roi = out.evCents / totalCost;                     // expected profit per $ risked
+      // Conservative view: the low end of the range you say you're unsure by.
+      const u = Math.max(0, Math.min(1, opts.uncertainty || 0));
+      out.consProb = Math.max(0, yourProb - u);
+      out.consEvCents = out.consProb * 100 * contracts - totalCost;
+      out.consRoi = out.consEvCents / totalCost;
     }
     return out;
+  }
+
+  // ---------- Track record scoring ----------
+  // entry: {prob (your chance this side wins), marketProb, won (true/false), totalCost, contracts}
+
+  // Brier score: mean squared gap between forecast and result (1 or 0). Lower is better.
+  function brier(entries, key) {
+    const s = entries.filter(e => typeof e.won === 'boolean' && e[key] != null);
+    if (!s.length) return null;
+    return s.reduce((t, e) => t + Math.pow(e[key] - (e.won ? 1 : 0), 2), 0) / s.length;
+  }
+
+  // Group settled picks into probability bands and compare predicted vs actual win rate.
+  function calibration(entries, bands) {
+    bands = bands || [[0, .2], [.2, .4], [.4, .6], [.6, .8], [.8, 1.0001]];
+    return bands.map(([lo, hi]) => {
+      const s = entries.filter(e => typeof e.won === 'boolean' && e.prob >= lo && e.prob < hi);
+      return {
+        lo, hi: Math.min(hi, 1), n: s.length,
+        predicted: s.length ? s.reduce((t, e) => t + e.prob, 0) / s.length : null,
+        actual: s.length ? s.filter(e => e.won).length / s.length : null,
+      };
+    });
+  }
+
+  function trackSummary(entries) {
+    const settled = entries.filter(e => typeof e.won === 'boolean');
+    const pnl = settled.reduce((t, e) => t + (e.won ? 100 * e.contracts - e.totalCost : -e.totalCost), 0);
+    const staked = settled.reduce((t, e) => t + e.totalCost, 0);
+    return {
+      total: entries.length, settled: settled.length, open: entries.length - settled.length,
+      wins: settled.filter(e => e.won).length,
+      pnlCents: pnl, stakedCents: staked, returnPct: staked ? pnl / staked : null,
+      brierYou: brier(settled, 'prob'), brierMarket: brier(settled, 'marketProb'),
+      calibration: calibration(settled),
+    };
   }
 
   /**
@@ -195,7 +237,7 @@
 
   const api = {
     DEFAULT_FEE_RATE, feeCents, analyzeSide, rankOutcomes, overround,
-    parseScreenshotText,
+    parseScreenshotText, brier, calibration, trackSummary,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.KatyMath = api;

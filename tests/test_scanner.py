@@ -39,7 +39,14 @@ def test_rank_with_and_without_probs():
     r = rank(MARKETS, {"EV-A": 0.55}, stake_cents=1000)
     assert r["valued"][0]["ticker"] == "EV-A" and r["valued"][0]["side"] == "YES"
     assert all(x["ticker"] == "EV-B" for x in r["market_only"])
-    assert not rank(MARKETS, {}, min_volume=100)["market_only"][0]["ticker"] == "EV-B"
+    flagged = rank(MARKETS, {}, min_volume=100)["market_only"]
+    assert all("thin volume 5" in r["flags"] for r in flagged if r["ticker"] == "EV-B")
+    assert all(r["ticker"] == "EV-A" for r in rank(MARKETS, {}, min_volume=100, hide_flagged=True)["market_only"])
+
+
+def test_conservative_ranking_sinks_shaky_edges():
+    a = analyze_side(58, 0.70, uncertainty=0.07)
+    assert abs(a.cons_prob - 0.63) < 1e-9 and a.cons_ev_cents < a.ev_cents
 
 
 def test_cli_end_to_end(monkeypatch, capsys, tmp_path):

@@ -11,6 +11,12 @@
     if (Array.isArray(saved)) state.rows = saved;
   } catch (e) { /* storage unavailable: start empty */ }
   const save = () => { try { localStorage.setItem('katywins.rows', JSON.stringify(state.rows)); } catch (e) {} };
+  state.track = [];
+  try {
+    const t = JSON.parse(localStorage.getItem('katywins.track') || '[]');
+    if (Array.isArray(t)) state.track = t;
+  } catch (e) { /* storage unavailable */ }
+  const saveTrack = () => { try { localStorage.setItem('katywins.track', JSON.stringify(state.track)); } catch (e) {} };
 
   // ---------- tabs ----------
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
@@ -187,6 +193,7 @@
   $('#addRow').onclick = () => { state.rows.push({ label: '', yes: '', no: '', mine: '' }); renderTable(); compute(); };
   $('#stake').addEventListener('input', compute);
   $('#feeRate').addEventListener('input', compute);
+  $('#unsure').addEventListener('input', compute);
 
   // ---------- results ----------
   const $$ = c => '$' + (c / 100).toFixed(2);
@@ -203,6 +210,8 @@
     const stakeCents = Math.max(100, (parseFloat($('#stake').value) || 10) * 100);
     const rateIn = parseFloat($('#feeRate').value);
     const rate = Number.isFinite(rateIn) && rateIn >= 0 ? rateIn : 0.07;
+    const uIn = parseFloat($('#unsure').value);
+    const uncertainty = Number.isFinite(uIn) && uIn > 0 ? Math.min(uIn, 50) / 100 : 0;
     const outcomes = state.rows
       .map(r => ({
         label: (r.label || '').trim() || 'Unnamed',
@@ -228,19 +237,23 @@
     for (const o of outcomes) {
       [['YES', o.yesAsk, o.yourYesProb], ['NO', o.noAsk, o.yourYesProb === null ? null : 1 - o.yourYesProb]].forEach(([side, price, p]) => {
         if (!price) return;
-        const a = M.analyzeSide(price, p, { contracts: contractsFor(stakeCents, price, rate), feeRate: rate });
+        const a = M.analyzeSide(price, p, { contracts: contractsFor(stakeCents, price, rate), feeRate: rate, uncertainty });
         if (a) sides.push(Object.assign({ label: o.label, side }, a));
       });
     }
-    const valued = sides.filter(s => s.roi !== null).sort((a, b) => b.roi - a.roi);
+    // Ranked by the cautious end of your range, so shaky edges sink.
+    const valued = sides.filter(s => s.roi !== null).sort((a, b) => b.consRoi - a.consRoi);
     const market = sides.filter(s => s.roi === null).sort((a, b) => b.marketProb - a.marketProb);
 
     if (valued.length) {
       const best = valued[0];
-      if (best.evCents <= 0) {
-        box.insertAdjacentHTML('beforeend', `<div class="pick bad"><h3>NO VALUE BET RIGHT NOW</h3><p class="note" style="margin:0">With your chances and the fees, every option loses money on average. Skipping is the winning move here.</p></div>`);
+      if (best.consEvCents <= 0) {
+        const why = best.evCents > 0
+          ? 'Your best guess shows a small edge, but it disappears at the cautious end of your range.'
+          : 'With your chances and the fees, every option loses money on average.';
+        box.insertAdjacentHTML('beforeend', `<div class="pick bad"><h3>NO VALUE BET RIGHT NOW</h3><p class="note" style="margin:0">${why} Skipping is the winning move here.</p></div>`);
       }
-      valued.forEach((s, i) => box.appendChild(card(s, i + 1, s.evCents > 0 ? '' : 'bad')));
+      valued.forEach((s, i) => box.appendChild(card(s, i + 1, s.consEvCents > 0 ? '' : 'bad')));
     }
     if (market.length) {
       box.insertAdjacentHTML('beforeend', `<p class="note" style="margin:6px 0 0">${valued.length ? 'No YOUR % entered for these, so they show market odds only:' : 'These are the <b>market\'s</b> odds only. Add YOUR % to rank by value; high chance is not the same as a good bet.'}</p>`);
@@ -267,13 +280,109 @@
       stats.push(['You say', pct(s.yourProb)]);
       stats.push(['Expected profit', (s.evCents >= 0 ? '+' : '−') + $$(Math.abs(s.evCents)), s.evCents > 0 ? 'good' : 'neg']);
       stats.push(['Return per $1', (s.roi >= 0 ? '+' : '') + (s.roi * 100).toFixed(1) + '%', s.roi > 0 ? 'good' : 'neg']);
+      if (s.consProb !== s.yourProb) {
+        stats.push(['Cautious chance', pct(s.consProb)]);
+        stats.push(['Cautious profit', (s.consEvCents >= 0 ? '+' : '−') + $$(Math.abs(s.consEvCents)), s.consEvCents > 0 ? 'good' : 'neg']);
+      }
     }
     const g = document.createElement('div');
     g.className = 'stats';
     g.innerHTML = stats.map(([k, v, c]) => `<div class="stat"><span>${k}</span><b class="${c || ''}">${v}</b></div>`).join('');
     d.appendChild(g);
+    if (s.yourProb !== null) {
+      const b = document.createElement('button');
+      b.className = 'mini save';
+      b.textContent = 'SAVE PICK TO TRACK RECORD';
+      b.onclick = () => {
+        state.track.unshift({
+          id: Date.now() + Math.random(), date: new Date().toISOString().slice(0, 10),
+          label: s.label, side: s.side, price: s.priceCents, contracts: s.contracts,
+          totalCost: s.totalCost, prob: s.yourProb, marketProb: s.marketProb, won: null,
+        });
+        saveTrack(); renderTrack();
+        b.textContent = 'SAVED ✓'; b.disabled = true;
+      };
+      d.appendChild(b);
+    }
     return d;
   }
 
-  renderTable(); compute(); renderShots();
+  // ---------- track record ----------
+  function renderTrack() {
+    const box = $('#track');
+    box.innerHTML = '';
+    if (!state.track.length) {
+      box.innerHTML = '<p class="note">No picks saved yet. Enter YOUR % on an outcome and tap SAVE PICK on its card.</p>';
+      return;
+    }
+    const s = M.trackSummary(state.track);
+    const stats = [
+      ['Settled', `${s.settled} <small>(${s.open} open)</small>`],
+      ['Won', s.settled ? `${s.wins} / ${s.settled}` : '-'],
+      ['Net profit', s.settled ? (s.pnlCents >= 0 ? '+' : '−') + $$(Math.abs(s.pnlCents)) : '-', s.pnlCents > 0 ? 'good' : s.pnlCents < 0 ? 'neg' : ''],
+      ['Return on staked', s.returnPct === null ? '-' : (s.returnPct * 100).toFixed(1) + '%', s.returnPct > 0 ? 'good' : s.returnPct < 0 ? 'neg' : ''],
+      ['Your accuracy (Brier)', s.brierYou === null ? '-' : s.brierYou.toFixed(3)],
+      ['Market accuracy (Brier)', s.brierMarket === null ? '-' : s.brierMarket.toFixed(3)],
+    ];
+    const g = document.createElement('div');
+    g.className = 'stats';
+    g.innerHTML = stats.map(([k, v, c]) => `<div class="stat"><span>${k}</span><b class="${c || ''}">${v}</b></div>`).join('');
+    box.appendChild(g);
+
+    let verdict;
+    if (s.settled < 30) verdict = `Only ${s.settled} settled pick${s.settled === 1 ? '' : 's'}. You need about 30+ before these numbers mean much; luck dominates small samples.`;
+    else if (s.brierYou < s.brierMarket) verdict = 'Your probabilities have been more accurate than the market\'s (lower Brier). That\'s the sign of a real edge. Keep tracking.';
+    else verdict = 'The market\'s prices have been more accurate than your probabilities. Bet smaller or not at all until that changes.';
+    box.insertAdjacentHTML('beforeend', `<p class="note">${verdict} Lower Brier = more accurate; 0.25 is coin-flip guessing.</p>`);
+
+    const cal = document.createElement('div');
+    cal.className = 'calib';
+    cal.innerHTML = s.calibration.map(b =>
+      `<div>${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%<b>${b.n ? Math.round(b.actual * 100) + '%' : '-'}</b>won · ${b.n}</div>`).join('');
+    box.insertAdjacentHTML('beforeend', '<p class="note" style="margin-bottom:0">Calibration: when you said this range, how often it actually won.</p>');
+    box.appendChild(cal);
+
+    state.track.forEach(e => {
+      const it = document.createElement('div');
+      it.className = 'tr-item';
+      const what = document.createElement('div');
+      what.className = 'what';
+      what.innerHTML = `<span class="side ${e.side}">${e.side}</span>`;
+      what.appendChild(document.createTextNode(e.label));
+      const sm = document.createElement('small');
+      sm.textContent = `${e.date} · ${e.contracts} @ ${e.price}¢ · cost ${$$(e.totalCost)} · you ${pct(e.prob)} · market ${pct(e.marketProb)}`;
+      what.appendChild(sm);
+      it.appendChild(what);
+      const btns = document.createElement('div');
+      btns.className = 'row';
+      [['WON', true, 'won'], ['LOST', false, 'lost']].forEach(([t, v, c]) => {
+        const b = document.createElement('button');
+        b.className = `mini ${c}` + (e.won === v ? ' on' : '');
+        b.textContent = t;
+        b.onclick = () => { e.won = e.won === v ? null : v; saveTrack(); renderTrack(); };
+        btns.appendChild(b);
+      });
+      const rm = document.createElement('button');
+      rm.className = 'mini rm'; rm.textContent = '✕'; rm.setAttribute('aria-label', 'Remove pick');
+      rm.onclick = () => { state.track = state.track.filter(x => x !== e); saveTrack(); renderTrack(); };
+      btns.appendChild(rm);
+      it.appendChild(btns);
+      box.appendChild(it);
+    });
+  }
+  $('#clearTrack').onclick = () => {
+    if (state.track.length && confirm('Delete your whole track record?')) { state.track = []; saveTrack(); renderTrack(); }
+  };
+  $('#exportTrack').onclick = () => {
+    const head = 'date,outcome,side,price_cents,contracts,total_cost_cents,your_prob,market_prob,result';
+    const q = v => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = state.track.map(e => [e.date, q(e.label), e.side, e.price, e.contracts, e.totalCost, e.prob, e.marketProb,
+      e.won === null ? 'open' : e.won ? 'won' : 'lost'].join(','));
+    const blob = new Blob([[head, ...lines].join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'katy-wins-track-record.csv'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  renderTable(); compute(); renderShots(); renderTrack();
 })();

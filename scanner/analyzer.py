@@ -23,26 +23,44 @@ def load_probabilities(path: Optional[str]) -> Dict[str, float]:
     return out
 
 
+def quality_flags(spread: Optional[int], volume: int, max_spread: int, min_volume: int) -> List[str]:
+    """Reasons to distrust the displayed price. Shown, not hidden."""
+    flags = []
+    if spread is None:
+        flags.append("no bid (price may be stale)")
+    elif spread > max_spread:
+        flags.append(f"wide spread {spread}¢")
+    if volume < min_volume:
+        flags.append(f"thin volume {volume}")
+    return flags
+
+
 def rank(markets: Iterable[dict], probs: Dict[str, float], stake_cents: int = 1000,
-         rate: float = DEFAULT_FEE_RATE, min_volume: int = 0) -> Dict[str, List[dict]]:
+         rate: float = DEFAULT_FEE_RATE, min_volume: int = 0, uncertainty: float = 0.0,
+         max_spread: int = 10, hide_flagged: bool = False) -> Dict[str, List[dict]]:
     valued: List[dict] = []
     market_only: List[dict] = []
     for m in markets:
-        if (m.get("volume") or 0) < min_volume:
-            continue
+        volume = m.get("volume") or 0
         p_yes = probs.get((m.get("ticker") or "").upper())
-        for side, price, p in (
-            ("YES", m.get("yes_ask"), p_yes),
-            ("NO", m.get("no_ask"), None if p_yes is None else 1 - p_yes),
+        for side, price, bid, p in (
+            ("YES", m.get("yes_ask"), m.get("yes_bid"), p_yes),
+            ("NO", m.get("no_ask"), m.get("no_bid"), None if p_yes is None else 1 - p_yes),
         ):
             if not price or not (1 <= price <= 99):
                 continue
+            spread = price - bid if bid else None
+            flags = quality_flags(spread, volume, max_spread, min_volume)
+            if hide_flagged and flags:
+                continue
             n = contracts_for_stake(stake_cents, price, rate)
-            a = analyze_side(price, p, n, rate)
+            a = analyze_side(price, p, n, rate, uncertainty)
             if a is None:
                 continue
-            row = {"ticker": m["ticker"], "label": m["label"], "title": m.get("title"), "side": side, **a.__dict__}
+            row = {"ticker": m["ticker"], "label": m["label"], "title": m.get("title"), "side": side,
+                   "spread": spread, "volume": volume, "flags": flags, **a.__dict__}
             (valued if a.roi is not None else market_only).append(row)
-    valued.sort(key=lambda r: r["roi"], reverse=True)
+    # Rank by the cautious end of your range so shaky edges sink.
+    valued.sort(key=lambda r: r["cons_roi"], reverse=True)
     market_only.sort(key=lambda r: r["market_prob"], reverse=True)
     return {"valued": valued, "market_only": market_only}

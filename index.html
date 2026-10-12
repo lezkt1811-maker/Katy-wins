@@ -91,6 +91,18 @@ details{margin-top:10px}
 summary{cursor:pointer;color:var(--cyan)}
 pre{white-space:pre-wrap;word-break:break-word;background:#05040b;border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--dim);font-size:.8rem;max-height:220px;overflow:auto}
 .hidden{display:none!important}
+.mini{font-family:Orbitron,sans-serif;font-size:.68rem;letter-spacing:.08em;padding:6px 10px;border-radius:8px;cursor:pointer;background:transparent}
+.mini.save{border:1px solid var(--yellow);color:var(--yellow);margin-top:10px}
+.mini.won{border:1px solid var(--lime);color:var(--lime)}
+.mini.lost{border:1px solid var(--red);color:var(--red)}
+.mini.on.won{background:var(--lime);color:#000}.mini.on.lost{background:var(--red);color:#000}
+.mini.rm{border:1px solid var(--line);color:var(--dim)}
+.tr-item{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #120f22}
+.tr-item .what{flex:1 1 220px}
+.tr-item .what small{display:block;color:var(--dim)}
+.calib{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px}
+.calib div{background:#05040b;border:1px solid var(--line);border-radius:8px;padding:6px;text-align:center;font-size:.72rem;color:var(--dim)}
+.calib b{display:block;color:var(--cyan);font-size:.9rem}
 footer{color:var(--dim);font-size:.8rem;text-align:center;margin-top:28px}
 footer b{color:var(--orange)}
 @media (max-width:640px){
@@ -168,7 +180,9 @@ footer b{color:var(--orange)}
       <button class="btn cyan" id="addRow">+ ADD ROW</button>
       <label class="f">STAKE PER BET ($)<input id="stake" type="number" min="1" step="1" value="10" inputmode="decimal" style="width:120px"></label>
       <label class="f">FEE RATE<input id="feeRate" type="number" min="0" max="0.2" step="0.005" value="0.07" inputmode="decimal" style="width:100px"></label>
+      <label class="f">HOW UNSURE (± %)<input id="unsure" type="number" min="0" max="50" step="1" value="5" inputmode="decimal" style="width:110px"></label>
     </div>
+    <p class="note">HOW UNSURE: if you say 70% but could be off by 5, bets are ranked using 65%, the cautious end. Set it from your track record once you have one.</p>
     <p class="note warn hidden" id="overNote"></p>
   </section>
 
@@ -176,6 +190,17 @@ footer b{color:var(--orange)}
   <section class="panel">
     <h2>03 // BEST OPTIONS</h2>
     <div class="cards" id="results"><p class="note">Upload a screenshot or add a row to see results.</p></div>
+  </section>
+
+  <!-- TRACK RECORD -->
+  <section class="panel">
+    <h2>04 // TRACK RECORD</h2>
+    <p class="note" style="margin-top:0">Save picks (or paper picks you didn't buy), then mark them WON or LOST when they settle. This shows whether your % beats the market. That's the only real proof you have an edge.</p>
+    <div id="track"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn cyan" id="exportTrack">EXPORT CSV</button>
+      <button class="btn pink" id="clearTrack">CLEAR ALL</button>
+    </div>
   </section>
 
   <footer>

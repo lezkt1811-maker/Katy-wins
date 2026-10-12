@@ -32,10 +32,14 @@ class SideAnalysis:
     edge: Optional[float] = None
     ev_cents: Optional[float] = None
     roi: Optional[float] = None   # expected profit per $1 risked
+    cons_prob: Optional[float] = None      # low end of your stated uncertainty
+    cons_ev_cents: Optional[float] = None
+    cons_roi: Optional[float] = None
 
 
 def analyze_side(price_cents: int, your_prob: Optional[float] = None,
-                 contracts: int = 1, rate: float = DEFAULT_FEE_RATE) -> Optional[SideAnalysis]:
+                 contracts: int = 1, rate: float = DEFAULT_FEE_RATE,
+                 uncertainty: float = 0.0) -> Optional[SideAnalysis]:
     if not (1 <= price_cents <= 99):
         return None
     contracts = max(1, int(contracts))
@@ -55,6 +59,10 @@ def analyze_side(price_cents: int, your_prob: Optional[float] = None,
         a.edge = your_prob - a.break_even
         a.ev_cents = your_prob * 100 * contracts - total_cost
         a.roi = a.ev_cents / total_cost
+        u = min(max(uncertainty, 0.0), 1.0)
+        a.cons_prob = max(0.0, your_prob - u)
+        a.cons_ev_cents = a.cons_prob * 100 * contracts - total_cost
+        a.cons_roi = a.cons_ev_cents / total_cost
     return a
 
 

@@ -16,7 +16,8 @@ Everything is free. There's no API key, no account, and no paid service. Screens
 1. **Screenshots tab.** Tap the pink box and pick one or more Kalshi screenshots (or paste one). Tap **READ SCREENSHOTS**.
 2. **Check the numbers.** Fix any digit the reader got wrong. Prices are the **Buy** prices.
 3. **Add YOUR %** for any outcome you have an opinion on (your chance it's a YES).
-4. Set your **stake per bet**. **Best options** ranks every side by expected return per dollar.
+4. Set your **stake per bet** and **how unsure** you are (± points). **Best options** ranks every side by the *cautious* expected return: if you say 70% ± 5, it uses 65%, so shaky edges sink.
+5. Tap **SAVE PICK** on anything you bet (or would have bet). When it settles, mark **WON** or **LOST**. **Track record** then shows your net profit, your accuracy vs. the market's (Brier score), and calibration: when you said 60–80%, how often you were right. After about 30 settled picks this tells you whether you really have an edge. Picks are stored only in your browser; use **EXPORT CSV** to keep a copy.
 
 The **Live Kalshi** tab can pull current prices from a market link or ticker. Some browsers block that request; if yours does, use screenshots or the scanner below.
 
@@ -36,8 +37,11 @@ Needs Python 3.9+.
 pip install -r requirements.txt
 python scan.py --event KXHIGHCHI-26OCT12          # one event
 python scan.py --series KXHIGHCHI --stake 25      # every open event in a series
-python scan.py --event KXHIGHCHI-26OCT12 --probs my_odds.csv
+python scan.py --event KXHIGHCHI-26OCT12 --probs my_odds.csv --uncertainty 5
+python scan.py --series KXHIGHCHI --min-volume 100 --max-spread 6 --hide-flagged
 ```
+
+The scanner flags wide bid-ask spreads, missing bids (stale prices), and thin volume, so you don't trust a price you can't actually get. Add `--hide-flagged` to drop them.
 
 `my_odds.csv` holds your own YES chances:
 
