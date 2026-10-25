@@ -343,7 +343,10 @@
 
     // Analyse each side at the number of contracts the stake buys.
     const sides = [];
-    for (const o of outcomes) {
+    // Rows flagged misread (⚠) are never ranked: a garbled price would look like a bet.
+    const trusted = outcomes.filter(o => !(o.warn || []).length);
+    const skippedMisread = outcomes.length - trusted.length;
+    for (const o of trusted) {
       [['YES', o.yesAsk, o.yourYesProb], ['NO', o.noAsk, o.yourYesProb === null ? null : 1 - o.yourYesProb]].forEach(([side, price, p]) => {
         if (!price) return;
         const a = M.analyzeSide(price, p, { contracts: contractsFor(stakeCents, price, rate), feeRate: rate, uncertainty });
@@ -352,6 +355,7 @@
     }
     // Ranked by the cautious end of your range, so shaky edges sink.
     const valued = sides.filter(s => s.roi !== null).sort((a, b) => b.consRoi - a.consRoi);
+    // Market-only rows: sorted by price, not by chance, so a 1¢ long shot never reads as "best".
     const market = sides.filter(s => s.roi === null).sort((a, b) => b.marketProb - a.marketProb);
 
     // Verdict first: the tool's main job is telling her when NOT to bet.
@@ -365,6 +369,7 @@
       staleMinutes: ages.length ? Math.floor(Math.max(...ages) / 60000) : null,
       settledPicks: track.settled, brierYou: track.brierYou, brierMarket: track.brierMarket,
     });
+    if (skippedMisread) skip.push(`${skippedMisread} misread row${skippedMisread === 1 ? ' was' : 's were'} left out of the ranking. Fix ⚠ rows to include them.`);
     const cautiousPos = valued.some(v => v.consEvCents > 0);
     const head = !valued.length ? 'NO RECOMMENDATION'
       : !cautiousPos ? 'SKIP: NO VALUE BET RIGHT NOW'
