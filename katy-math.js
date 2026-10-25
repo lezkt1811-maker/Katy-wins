@@ -253,7 +253,7 @@
       .replace(/\d{1,2}\s*(?:¢|c\b|e\b)/g, ' ')
       .replace(/\$\s?0?\.\d{2}/g, ' ')
       .replace(/\$\s?[\d,]+(?:\.\d+)?[KkMm]?/g, ' ')          // volume like $290,994
-      .replace(/(?:^|\s)\d{1,3}(?:[.,]\d{1,2})?\s*[x×X](?![a-z])/g, ' ')   // payout 1.76x
+      .replace(/(?:^|\s)\.?\d{1,3}(?:[.,]\d{1,2})?\s*[x×X](?![a-z])/g, ' ')   // payout 1.76x, or a cut-off .40x
       .replace(/(?:^|\s)\d+(?:\.\d+)?[KkMm](?![a-z])/g, ' ')    // counts like 2.64K
       .replace(/\b(buy|sell|chance|yes|no)\b/gi, ' ')
       .replace(/[|•·<>»«©®™_=~*]+/g, ' ')
@@ -332,11 +332,18 @@
       if (!hasPrice) {
         // A line with no price is probably the outcome name (often with its chance %,
         // like "66° to 67°  1%") for the Yes/No buttons on the next line.
-        if (label.length >= 2) { pendingLabel = label; pendingChance = pct ? Math.min(100, +pct[1]) : null; }
+        if ((label.match(/[A-Za-z]/g) || []).length >= 2) { pendingLabel = label; pendingChance = pct ? Math.min(100, +pct[1]) : null; }
         continue;
       }
 
-      const finalLabel = label.length >= 2 ? label : (pendingLabel || `Outcome ${outcomes.length + 1}`);
+      // A real outcome name has at least two letters. Lines like ".40x" or "9 1" are
+      // leftover numbers from a payout column, not markets, so they are dropped.
+      const hasName = (label.match(/[A-Za-z]/g) || []).length >= 2;
+      // A lone "No" line that follows a Yes row is the same outcome's No price; keep it.
+      const prev = outcomes[outcomes.length - 1];
+      const noContinuation = !!prev && prev.noAsk === null && yesAsk === null && noAsk !== null;
+      if (!hasName && !pendingLabel && !noContinuation) continue;
+      const finalLabel = hasName ? label : (pendingLabel || (prev ? prev.label : ''));
       const valid = v => (v !== null && v >= 1 && v <= 99 ? v : null);
       outcomes.push({
         label: finalLabel,
