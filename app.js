@@ -217,11 +217,12 @@
     } catch (e) { /* not a URL */ }
     return s.toUpperCase();
   }
-  const cents = (m, k) => {
-    if (m[k] !== undefined && m[k] !== null && m[k] !== '') return Math.round(+m[k]);
-    const d = m[k + '_dollars'];
-    return d !== undefined && d !== null && d !== '' ? Math.round(parseFloat(d) * 100) : null;
-  };
+  const cents = M.priceCents;
+  // Add live rows at Buy prices, stamped with the time they were fetched.
+  function addLiveRows(list, fetchedAt) {
+    list.forEach(m => state.rows.push({ label: m.label, yes: m.yes || '', no: m.no || '', mine: '', fetchedAt }));
+    save(); renderTable(); compute();
+  }
   $('#liveBtn').onclick = async () => {
     const t = tickerFrom($('#ticker').value), note = $('#liveNote');
     if (!t) { note.textContent = 'Paste a link or ticker first.'; return; }
@@ -236,21 +237,61 @@
       }
       if (!markets.length) { note.className = 'note warn'; note.textContent = 'No open markets found for ' + t + '. Check the ticker.'; return; }
       const fetchedAt = Date.now();
-      markets.forEach(m => {
+      addLiveRows(markets.map(m => {
         const yesBid = cents(m, 'yes_bid');
         // Buying NO = selling YES, so NO's ask is 100 - YES bid when Kalshi doesn't list it.
-        const noAsk = cents(m, 'no_ask') || (yesBid ? 100 - yesBid : null);
-        state.rows.push({
+        return {
           label: m.yes_sub_title || m.subtitle || m.title || m.ticker,
-          yes: cents(m, 'yes_ask') || '', no: noAsk || '', mine: '', fetchedAt,
-        });
-      });
+          yes: cents(m, 'yes_ask'), no: cents(m, 'no_ask') || (yesBid ? 100 - yesBid : null),
+        };
+      }), fetchedAt);
       note.textContent = `Added ${markets.length} market${markets.length > 1 ? 's' : ''} at Buy prices as of ${new Date(fetchedAt).toLocaleTimeString()}. Prices move; refresh before buying.`;
-      save(); renderTable(); compute();
     } catch (err) {
       note.className = 'note warn';
       note.textContent = 'Your browser blocked the direct request to Kalshi. Use screenshots instead, or run the free scanner.py on a computer (see README).';
     }
+  };
+
+  // ---------- browse a series' open games ----------
+  $('#browseBtn').onclick = async () => {
+    const s = $('#series').value.trim().toUpperCase(), note = $('#browseNote'), box = $('#gameList');
+    box.innerHTML = '';
+    if (!s) { note.className = 'note warn'; note.textContent = 'Enter a series ticker first.'; return; }
+    note.className = 'note'; note.textContent = 'Loading open games in ' + s + '…';
+    let games;
+    try {
+      const r = await fetch(`${KALSHI_API}/events?series_ticker=${encodeURIComponent(s)}&status=open&with_nested_markets=true&limit=100`);
+      if (!r.ok) { note.className = 'note warn'; note.textContent = 'Kalshi returned ' + r.status + ' for ' + s + '. Check the series ticker.'; return; }
+      games = M.marketsFromEvents((await r.json()).events);
+    } catch (err) {
+      note.className = 'note warn';
+      note.textContent = 'Your browser blocked the request to Kalshi. Use screenshots instead, or run the free scanner.py on a computer (see README).';
+      return;
+    }
+    if (!games.length) { note.className = 'note warn'; note.textContent = 'No open games found in ' + s + '.'; return; }
+    note.textContent = `${games.length} open game${games.length > 1 ? 's' : ''} in ${s}. Buy prices shown; add the ones you want to the table.`;
+    games.forEach(g => {
+      const vol = g.markets.reduce((a, m) => a + m.volume, 0);
+      const close = g.markets.map(m => m.close).filter(Boolean).sort()[0];
+      const div = document.createElement('div');
+      div.className = 'game';
+      div.innerHTML = `<div class="gh"><strong></strong><button class="btn cyan">ADD TO TABLE</button></div><div class="gm"></div><ul></ul>`;
+      div.querySelector('strong').textContent = g.title;
+      div.querySelector('.gm').textContent = `${vol.toLocaleString()} contracts traded` + (close ? ' · closes ' + new Date(close).toLocaleString() : '');
+      const ul = div.querySelector('ul');
+      g.markets.forEach(m => {
+        const li = document.createElement('li'), name = document.createElement('span'), px = document.createElement('span');
+        name.textContent = m.label;
+        px.textContent = `YES ${m.yes ?? '—'}¢ · NO ${m.no ?? '—'}¢`;
+        li.append(name, px);
+        ul.appendChild(li);
+      });
+      div.querySelector('button').onclick = () => {
+        addLiveRows(g.markets.map(m => ({ label: m.label, yes: m.yes, no: m.no })), Date.now());
+        note.textContent = 'Added ' + g.title + ' to the table.';
+      };
+      box.appendChild(div);
+    });
   };
 
   // ---------- table ----------

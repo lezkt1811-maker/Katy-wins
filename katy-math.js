@@ -370,10 +370,38 @@
     return merged;
   }
 
+  // Kalshi sends a price as whole cents (yes_ask) or as dollars (yes_ask_dollars).
+  // Returns cents, or null when the price is missing.
+  function priceCents(m, k) {
+    if (m[k] !== undefined && m[k] !== null && m[k] !== '') return Math.round(+m[k]);
+    const d = m[k + '_dollars'];
+    return d !== undefined && d !== null && d !== '' ? Math.round(parseFloat(d) * 100) : null;
+  }
+
+  // Turn Kalshi's /events response (with nested markets) into per-game groups.
+  // Buy prices: YES costs yes_ask; NO costs no_ask, or 100 - yes_bid if no_ask is missing.
+  function marketsFromEvents(events) {
+    return (events || []).map(ev => ({
+      eventTicker: ev.event_ticker || '',
+      title: ev.title || ev.event_ticker || '',
+      markets: (ev.markets || []).map(m => {
+        const yesBid = priceCents(m, 'yes_bid');
+        return {
+          ticker: m.ticker || '',
+          label: m.yes_sub_title || m.subtitle || m.title || m.ticker || '',
+          yes: priceCents(m, 'yes_ask'),
+          no: priceCents(m, 'no_ask') || (yesBid ? 100 - yesBid : null),
+          volume: +m.volume || 0,
+          close: m.close_time || '',
+        };
+      }),
+    })).filter(g => g.markets.length);
+  }
+
   const api = {
     DEFAULT_FEE_RATE, feeCents, analyzeSide, rankOutcomes, overround,
     parseScreenshotText, brier, calibration, trackSummary, logLoss, maxDrawdown,
-    entryCost, reasonsToSkip, checkReading, rowsFromTsv,
+    entryCost, reasonsToSkip, checkReading, rowsFromTsv, priceCents, marketsFromEvents,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.KatyMath = api;

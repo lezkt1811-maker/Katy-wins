@@ -27,6 +27,8 @@ Katy Wins does not claim to find profitable bets. It does the math honestly and 
 
 The **Live Kalshi** tab can pull current prices from a market link or ticker and stamps each row with the time it was fetched. Prices older than 10 minutes trigger a warning. Some browsers block that request; if yours does, use screenshots or the scanner below.
 
+The **Browse a league's games** section lists every open game in a Kalshi series (enter its series ticker, for example `KXHIGHCHI`) with Buy prices and trading volume, and adds a game's outcomes to the table with one tap. Kalshi's public data has no scores, so the app shows volume and close time instead.
+
 ## Why "highest chance" isn't "best bet"
 
 A contract at 95¢ wins often but risks 95¢ to make 5¢. One loss erases 19 wins. A screenshot shows the **market's** odds, and on their own those always look about fair, minus fees. A bet only has value when **your** chance is higher than the break-even chance. Katy Wins shows market-only odds separately and won't call them "best."
@@ -86,7 +88,7 @@ Limits: hourly candle closes approximate real fills; bigger orders get worse pri
 | `katy-math.js` | Fee math, break-even, ranking, screenshot text parsing |
 | `scan.py`, `scanner/` | Command-line live scanner using Kalshi's public API (retries, rate-limit backoff, timestamps) |
 | `history.py`, `scanner/history.py` | Historical calibration and fee-aware backtest by price range |
-| `tests/` | `node tests/math.test.js` and `pytest tests` (fees, EV, parser, track record, history, malformed data) |
+| `tests/` | `node tests/math.test.js`, `node tests/events.test.js` and `pytest tests` (fees, EV, parser, track record, history, malformed data) |
 
 ## Turn on the free website (one time)
 

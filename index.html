@@ -64,6 +64,11 @@ h2{font-family:'Exo 2',Inter,system-ui,sans-serif;font-size:1.15rem;font-weight:
 .progress>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--pink));box-shadow:0 0 12px var(--pink)}
 .note{color:var(--dim);font-size:.88rem;margin:10px 0 0}
 .note.warn{color:var(--orange)}
+.game{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
+.game .gh{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.game .gm{color:var(--dim);font-size:.82rem;margin-top:4px}
+.game ul{margin:8px 0 0;padding:0;list-style:none;font-size:.88rem}
+.game li{display:flex;gap:10px;justify-content:space-between;padding:3px 0;border-top:1px solid #120f22}
 label.f{display:flex;flex-direction:column;gap:4px;color:var(--cyan);font-size:.8rem;letter-spacing:.06em}
 input,select{font:inherit;color:#fff;background:#05040b;border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-width:0}
 input:focus,select:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 2px rgba(0,240,255,.25)}
@@ -180,6 +185,15 @@ footer b{color:var(--orange)}
       <button class="btn cyan" id="liveBtn">FETCH</button>
     </div>
     <p class="note" id="liveNote"></p>
+
+    <h2 style="margin-top:22px"><span class="num">02</span> Browse a league's games</h2>
+    <p class="note" style="margin-top:0">Enter a series ticker (for example <code>KXHIGHCHI</code>) to list its open games with Buy prices and trading volume. Kalshi's public data has no scores, so use volume and close time to judge how active each market is.</p>
+    <div class="row" style="margin-top:10px">
+      <input id="series" placeholder="SERIES-TICKER" style="flex:1 1 260px">
+      <button class="btn cyan" id="browseBtn">LIST GAMES</button>
+    </div>
+    <p class="note" id="browseNote"></p>
+    <div id="gameList"></div>
   </section>
 
   <section id="tab-research" class="panel hidden">
