@@ -225,6 +225,8 @@
   // "(?![a-z])" instead of \b so OCR output like "No59¢" (no space) still matches.
   const YES_RE = /\byes(?![a-z])[^\d]{0,6}(\d{1,2})\s*(?:¢|c|e|C)?/i;
   const NO_RE = /\bno(?![a-z])[^\d]{0,6}(\d{1,2})\s*(?:¢|c|e|C)?/i;
+  // Kalshi UI text that is not a market outcome (leverage tags, perp tickers, result counters).
+  const UI_NOISE_RE = /\b(trade with|leverage|perp|perpetual|found)\b/i;
   const OCR_DIGIT = { A: '4', O: '0', o: '0', S: '5', s: '5', I: '1', l: '1', B: '8', Z: '2' };
 
   // Fix letters OCR commonly swaps for digits, but only inside a number right
@@ -328,6 +330,9 @@
 
       const hasPrice = yesAsk !== null || noAsk !== null;
       const label = cleanLabel(line);
+      // Leverage tags and perp tickers are page furniture, not outcomes. Skip them entirely
+      // so they don't become a row or take over the name of the outcome above them.
+      if (UI_NOISE_RE.test(label)) continue;
 
       if (!hasPrice) {
         // A line with no price is probably the outcome name (often with its chance %,

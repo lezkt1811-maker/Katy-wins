@@ -295,9 +295,25 @@
   };
 
   // ---------- table ----------
+  // Rows with a misread warning stay hidden until you tap to show them.
+  let showMisread = false;
+  function renderMisreadNote() {
+    const n = state.rows.filter(r => (r.warn || []).length).length;
+    const note = $('#misreadNote');
+    note.innerHTML = '';
+    note.classList.toggle('hidden', !n);
+    if (!n) return;
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = showMisread ? 'HIDE MISREAD ROWS' : `SHOW ${n} MISREAD ROW${n === 1 ? '' : 'S'}`;
+    btn.onclick = () => { showMisread = !showMisread; renderTable(); };
+    note.append('⚠ Some rows may be misread. Check them before trusting them. ', btn);
+  }
+
   function renderTable() {
     const tb = $('#tbody');
     tb.innerHTML = '';
+    renderMisreadNote();
     state.rows.forEach((r, i) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -330,6 +346,7 @@
         });
       });
       tr.querySelector('.del').onclick = () => { state.rows.splice(i, 1); save(); renderTable(); compute(); };
+      if ((r.warn || []).length && !showMisread) tr.classList.add('hidden');
       tb.appendChild(tr);
     });
   }
@@ -344,6 +361,16 @@
     state.rows.forEach(r => { if (r.mine === '' || r.mine == null) r.mine = String(pct); });
     save(); renderTable(); compute();
   };
+  // Nudges YOUR % up or down by 5 on rows that already have a number. Blank rows stay blank.
+  const nudge = step => {
+    state.rows.forEach(r => {
+      if (r.mine === '' || r.mine == null) return;
+      r.mine = String(Math.min(100, Math.max(0, +r.mine + step)));
+    });
+    save(); renderTable(); compute();
+  };
+  $('#nudgeDown').onclick = () => nudge(-5);
+  $('#nudgeUp').onclick = () => nudge(5);
   $('#stake').addEventListener('input', compute);
   $('#feeRate').addEventListener('input', compute);
   $('#unsure').addEventListener('input', compute);

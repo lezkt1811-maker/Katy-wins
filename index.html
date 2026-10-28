@@ -239,9 +239,12 @@ footer b{color:var(--orange)}
       <button class="btn pink" id="clearRows">CLEAR TABLE</button>
       <label class="f">FILL BLANK YOUR % WITH<input id="fillPct" type="number" min="0" max="100" step="1" placeholder="e.g. 70" inputmode="decimal" style="width:100px"></label>
       <button class="btn" id="fillBlank">FILL BLANKS</button>
+      <button class="btn" id="nudgeDown">−5</button>
+      <button class="btn" id="nudgeUp">+5</button>
       <label class="f">HOW MUCH PER BET ($)<input id="stake" type="number" min="1" step="1" value="10" inputmode="decimal" style="width:120px"></label>
       <label class="f">HOW UNSURE ARE YOU? (± %)<input id="unsure" type="number" min="0" max="50" step="1" value="5" inputmode="decimal" style="width:110px"></label>
     </div>
+    <p class="note" id="misreadNote"></p>
     <p class="note">Start with the defaults. "How unsure" makes the app play it safe: if you say 70% and pick 5, it ranks bets as if you meant 65%.</p>
     <details class="advanced">
       <summary>Advanced settings (you can skip these)</summary>
