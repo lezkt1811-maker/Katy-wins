@@ -337,6 +337,13 @@
   $('#clearRows').onclick = () => {
     if (state.rows.length && confirm('Remove every row from the table?')) { state.rows = []; save(); renderTable(); compute(); }
   };
+  // Fills only the YOUR % boxes that are blank; numbers already typed stay as they are.
+  $('#fillBlank').onclick = () => {
+    const pct = parseFloat($('#fillPct').value);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) return;
+    state.rows.forEach(r => { if (r.mine === '' || r.mine == null) r.mine = String(pct); });
+    save(); renderTable(); compute();
+  };
   $('#stake').addEventListener('input', compute);
   $('#feeRate').addEventListener('input', compute);
   $('#unsure').addEventListener('input', compute);
