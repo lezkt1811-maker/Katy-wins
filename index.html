@@ -237,12 +237,18 @@ footer b{color:var(--orange)}
     <div class="row" style="margin-top:12px">
       <button class="btn cyan" id="addRow">+ ADD ROW</button>
       <button class="btn pink" id="clearRows">CLEAR TABLE</button>
-      <label class="f">STAKE PER BET ($)<input id="stake" type="number" min="1" step="1" value="10" inputmode="decimal" style="width:120px"></label>
-      <label class="f">FEE RATE<input id="feeRate" type="number" min="0" max="0.2" step="0.005" value="0.07" inputmode="decimal" style="width:100px"></label>
-      <label class="f">CATEGORY<input id="category" placeholder="e.g. Weather" maxlength="30" style="width:140px"></label>
-      <label class="f">HOW UNSURE (± %)<input id="unsure" type="number" min="0" max="50" step="1" value="5" inputmode="decimal" style="width:110px"></label>
+      <label class="f">HOW MUCH PER BET ($)<input id="stake" type="number" min="1" step="1" value="10" inputmode="decimal" style="width:120px"></label>
+      <label class="f">HOW UNSURE ARE YOU? (± %)<input id="unsure" type="number" min="0" max="50" step="1" value="5" inputmode="decimal" style="width:110px"></label>
     </div>
-    <p class="note">HOW UNSURE: if you say 70% but could be off by 5, bets are ranked using 65%, the cautious end. Set it from your track record once you have one.</p>
+    <p class="note">Start with the defaults. "How unsure" makes the app play it safe: if you say 70% and pick 5, it ranks bets as if you meant 65%.</p>
+    <details class="advanced">
+      <summary>Advanced settings (you can skip these)</summary>
+      <div class="row" style="margin-top:10px">
+        <label class="f">FEE RATE<input id="feeRate" type="number" min="0" max="0.2" step="0.005" value="0.07" inputmode="decimal" style="width:100px"></label>
+        <label class="f">CATEGORY<input id="category" placeholder="e.g. Weather" maxlength="30" style="width:140px"></label>
+      </div>
+      <p class="note">Fee rate: Kalshi's usual fee is 7%. Only change it if a market's rules say otherwise. Category: a label like "Weather" so you can see which kinds of bets you're good at.</p>
+    </details>
     <p class="note warn hidden" id="overNote"></p>
   </section>
 
