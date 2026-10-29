@@ -21,8 +21,86 @@
   // ---------- tabs ----------
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === t));
-    ['shots', 'live', 'research', 'how'].forEach(n => $('#tab-' + n).classList.toggle('hidden', n !== t.dataset.tab));
+    ['shots', 'live', 'log', 'research', 'how'].forEach(n => $('#tab-' + n).classList.toggle('hidden', n !== t.dataset.tab));
   }));
+
+  // ---------- live tennis log (practice only; no bets are placed) ----------
+  let logs = [];
+  try { logs = JSON.parse(localStorage.getItem('katywins.livelog') || '[]'); } catch (e) { logs = []; }
+  const saveLog = () => { try { localStorage.setItem('katywins.livelog', JSON.stringify(logs)); } catch (e) {} };
+  const pctOk = v => v !== '' && Number.isFinite(+v) && +v >= 0 && +v <= 100;
+
+  function renderLog() {
+    const list = $('#logList');
+    list.innerHTML = '';
+    logs.forEach(s => {
+      const card = document.createElement('div');
+      card.className = 'pick';
+      const head = document.createElement('div');
+      head.innerHTML = '<b></b><div class="note" style="margin:4px 0 0"></div>';
+      head.querySelector('b').textContent = s.match || 'Match';
+      head.querySelector('.note').textContent = `${s.a.name || 'Player A'} ${s.a.pct}% · ${s.b.name || 'Player B'} ${s.b.pct}%${s.score ? ' · score ' + s.score : ''}`;
+      card.appendChild(head);
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.marginTop = '8px';
+      const btn = (text, fn, cls = 'btn') => { const b = document.createElement('button'); b.className = cls; b.textContent = text; b.onclick = fn; return b; };
+      if (s.winner) {
+        row.append(btn('Undo result', () => { s.winner = null; saveLog(); renderLog(); }));
+      } else {
+        row.append(btn(`${s.a.name || 'A'} won`, () => { s.winner = 'a'; saveLog(); renderLog(); }, 'btn cyan'));
+        row.append(btn(`${s.b.name || 'B'} won`, () => { s.winner = 'b'; saveLog(); renderLog(); }, 'btn cyan'));
+      }
+      row.append(btn('Delete', () => { logs = logs.filter(x => x !== s); saveLog(); renderLog(); }, 'btn pink'));
+      card.appendChild(row);
+      const res = document.createElement('p');
+      res.className = 'note';
+      res.style.margin = '6px 0 0';
+      res.textContent = s.winner ? `Result: ${s.winner === 'a' ? s.a.name || 'Player A' : s.b.name || 'Player B'} won` : 'Not finished yet';
+      card.appendChild(res);
+      list.appendChild(card);
+    });
+    renderLogSummary();
+  }
+
+  // Groups every finished player's chance into 10-point ranges and shows how often they won.
+  function renderLogSummary() {
+    const box = $('#logSummary');
+    const done = logs.filter(s => s.winner);
+    if (!done.length) { box.innerHTML = '<p class="note">Mark a few matches as finished to see results.</p>'; return; }
+    const buckets = {};
+    done.forEach(s => {
+      [['a', s.a], ['b', s.b]].forEach(([side, p]) => {
+        const lo = Math.min(90, Math.floor(p.pct / 10) * 10);
+        const k = `${lo}–${lo + 10}%`;
+        buckets[k] = buckets[k] || { lo, n: 0, won: 0 };
+        buckets[k].n++;
+        if (s.winner === side) buckets[k].won++;
+      });
+    });
+    const rows = Object.entries(buckets).sort((x, y) => x[1].lo - y[1].lo)
+      .map(([k, b]) => `<tr><td>${k}</td><td>${b.n}</td><td>${Math.round(100 * b.won / b.n)}%</td></tr>`).join('');
+    box.innerHTML = `<p class="note" style="margin-top:0">Finished matches: ${done.length}. Each row is players whose chance fell in that range. Compare the "Won" column to the range: if the market is accurate, they should be close. Under about 30 matches, the numbers are too few to trust.</p>
+      <table class="tbl"><thead><tr><th>CHANCE</th><th>PLAYERS</th><th>WON</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  $('#logSave').onclick = () => {
+    const note = $('#logNote');
+    const pa = $('#logPctA').value, pb = $('#logPctB').value;
+    if (!pctOk(pa) || !pctOk(pb)) { note.textContent = 'Enter a chance from 0 to 100 for both players.'; note.classList.remove('hidden'); return; }
+    note.classList.add('hidden');
+    logs.unshift({
+      id: Date.now(),
+      match: $('#logMatch').value.trim(),
+      a: { name: $('#logNameA').value.trim(), pct: +pa },
+      b: { name: $('#logNameB').value.trim(), pct: +pb },
+      score: $('#logScore').value.trim(),
+      winner: null,
+    });
+    ['#logMatch', '#logNameA', '#logPctA', '#logNameB', '#logPctB', '#logScore'].forEach(id => { $(id).value = ''; });
+    saveLog(); renderLog();
+  };
+  renderLog();
 
   // ---------- screenshot upload ----------
   const drop = $('#drop'), fileIn = $('#file');

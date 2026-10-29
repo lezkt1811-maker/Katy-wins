@@ -153,6 +153,7 @@ footer b{color:var(--orange)}
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-tab="shots">SCREENSHOTS</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="live">LIVE KALSHI</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="log">LIVE LOG</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="research">RESEARCH</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="how">HOW IT WORKS</button>
     </div>
@@ -194,6 +195,26 @@ footer b{color:var(--orange)}
     </div>
     <p class="note" id="browseNote"></p>
     <div id="gameList"></div>
+  </section>
+
+  <section id="tab-log" class="panel hidden">
+    <h2><span class="num">01</span> Live tennis log</h2>
+    <p class="note" style="margin-top:0">Practice only, no money. Write down each player's chance from the live screen and the score. When the match ends, tap who won. The summary shows whether those chances came true. Nothing here places a bet.</p>
+    <div class="log-form">
+      <label class="f">MATCH<input id="logMatch" placeholder="e.g. Shelton vs Kym" maxlength="60"></label>
+      <div class="log-players">
+        <label class="f">PLAYER A<input id="logNameA" placeholder="Name" maxlength="40"></label>
+        <label class="f">A CHANCE %<input id="logPctA" type="number" min="0" max="100" inputmode="decimal"></label>
+        <label class="f">PLAYER B<input id="logNameB" placeholder="Name" maxlength="40"></label>
+        <label class="f">B CHANCE %<input id="logPctB" type="number" min="0" max="100" inputmode="decimal"></label>
+      </div>
+      <label class="f">SCORE<input id="logScore" placeholder="e.g. 1-0, 30-15" maxlength="40"></label>
+      <div class="row" style="margin-top:10px"><button class="btn cyan" id="logSave">SAVE SNAPSHOT</button></div>
+    </div>
+    <p class="note warn hidden" id="logNote"></p>
+    <div id="logList" style="margin-top:14px"></div>
+    <h3 class="sub">Summary</h3>
+    <div id="logSummary"><p class="note">Mark a few matches as finished to see results.</p></div>
   </section>
 
   <section id="tab-research" class="panel hidden">
